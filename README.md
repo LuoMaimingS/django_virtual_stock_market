@@ -1,0 +1,2 @@
+# django_virtual_stock_market
+使用django框架的虚拟股市环境
