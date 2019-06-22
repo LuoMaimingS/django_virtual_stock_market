@@ -1,0 +1,98 @@
+{% load bootstrap3 %}
+
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="IE-edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    
+    <title>虚拟股市</title>
+    
+    {% bootstrap_css %}
+    {% bootstrap_javascript %}
+    
+  </head>
+  
+  <body>
+    
+    <!-- Static navbar -->
+    <nav class="navbar navbar-default" font-size="100">
+      <a class="navbar-brand" href="https://cs.nju.edu.cn/">NJUCS</a>
+
+      <div class="collapse navbar-collapse" id="navbarSupportedContent">
+        <ul class="nav nav-pills">
+          <li class="nav-item active">
+            <a class="nav-link" href="{% url 'market:index' %}">主页<span class="sr-only">(current)</span></a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" href="{% url 'market:my_account' %}">我的账户</a>
+          </li>
+          
+          <li class="nav-item dropdown">
+            <a class="nav-link dropdown-toggle" href="#" id="navbarDropdown" role="button" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">
+              进入交易
+            </a>
+            <div class="dropdown-menu" aria-labelledby="navbarDropdown">
+              <ul>
+                <li><a class="dropdown-item" href="{% url 'market:bid' %}">买入股票</a></li>
+              
+                <li><a class="dropdown-item" href="#">卖出股票</a></li>
+                
+                <li><a class="dropdown-item" href="#">撤销委托</a></li>
+              </ul>
+            </div>
+          </li>
+          
+          <li class="nav-item dropdown">
+            <a class="nav-link dropdown-toggle" href="#" id="navbarDropdown" role="button" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">
+              市场信息
+            </a>
+            <div class="dropdown-menu" aria-labelledby="navbarDropdown">
+              <ul>
+                <li><a class="dropdown-item" href="{% url 'market:all_stocks' %}">全部股票</a></li>
+                <li><a class="dropdown-item" href="#">关注列表</a></li>
+              </ul>
+            </div>
+          </li>
+          
+          <li class="nav-item">
+            <a class="nav-link href="#">当日复盘</a>
+          </li>
+          
+          <li class="nav-item">
+            <a class="nav-link href="#">联系我们</a>
+          </li>
+          
+          {% if user.is_authenticated %}
+            <li class="nav navbar-nav navbar-right"><a href="{% url 'logout' %}?next={{request.path}}">登出</a></li>
+            <li class="nav navbar-nav navbar-right"><a href="{% url 'market:welcome' %}">{{ user.get_username }}</a></li>  
+          {% else %}
+            <li class="nav navbar-nav navbar-right"><a href="{% url 'market:register'%}?next={{request.path}}">注册</a></li>
+            <li class="nav navbar-nav navbar-right"><a href="{% url 'login'%}?next={{request.path}}">登陆</a></li>   
+          {% endif %} 
+          
+          <form class="form-inline my-2 my-lg-0" align='right'>
+          <input class="form-control mr-sm-2" type="search" placeholder="Search" aria-label="Search">
+          <button class="btn btn-outline-success my-2 my-sm-0" type="submit">搜索</button>
+          </form>
+          
+        </ul>
+        
+      </div>
+    </nav>
+    
+    <div class="container">
+      
+      <div class="page-header">
+        {% block header %}{% endblock header %}
+      </div>
+      <div>
+        {% block content %}{% endblock content %}
+      </div>
+      
+    </div> <!-- /container -->
+    
+  </body>
+</html>
+    

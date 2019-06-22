@@ -1,0 +1,132 @@
+{% extends "market/base.html" %}
+
+{% block header %}
+  <h1>{{client.name}}</h1>
+{% endblock header %}
+
+{% block content %}
+
+<h2>
+  <span class="label label-primary">当前资金</span>
+</h2>
+<p style="line-height:1.6">
+  <ul class="list-group">
+    <li class="list-group-item"> 资金总额：{{client.cash}}</li>
+    <li class="list-group-item"> 冻结资金：{{client.frozen_cash}}</li>
+    <li class="list-group-item"> 可用资金：{{client.flexible_cash}}</li>
+    <li class="list-group-item"> 当前收益：{{client.profit}}</li>
+
+  </ul>
+</p></br>
+
+<h2>
+  <span class="label label-primary">当前持仓</span>
+</h2>
+<p style="line-height:1.6">
+    <div class="row">
+      <div class="col-md-12">
+        <table class="table table-bordered">
+          <thead>
+            <tr>
+              <th>证券代码</th>
+              <th>总股数</th> <th>冻结股数</th> <th>可用股数</th>
+              <th>成本价</th> <th>保本价</th> <th>最新价</th>
+              <th>盈亏</th> <th>市值</th>
+            </tr>
+          </thead>
+          
+          <tbody>
+            {% if holding %}
+              {% for hold in holding %}
+                <tr>
+                  <td><a href="{{ hold.get_stock_url }}">{{hold.stock_symbol}}</a></td>
+                  <td>{{hold.vol}}</td>
+                  <td>{{hold.frozen_vol}}</td>
+                  <td>{{hold.available_vol}}</td>
+                  <td>{{hold.cost}}</td>
+                  <td>{{hold.price_guaranteed}}</td>
+                  <td>{{hold.last_price}}</td>
+                  <td>{{hold.profit}}</td>
+                  <td>{{hold.value}}</td>
+               </tr>
+              {% endfor %}
+            {% else %}
+              <tr>
+                <td>&nbsp;</td>
+                <td>&nbsp;</td> <td>&nbsp;</td> <td>&nbsp;</td>
+                <td>&nbsp;</td> <td>&nbsp;</td> <td>&nbsp;</td>
+                <td>&nbsp;</td> <td>&nbsp;</td>
+              </tr>
+            {% endif %}
+          </tbody>
+          
+        </table>
+      </div>
+    </div>
+
+<h2>
+  <span class="label label-info">当前委托</span>
+</h2>
+<p style="line-height:1.6">
+    <div class="row">
+      <div class="col-md-12">
+        <table class="table table-bordered">
+          <thead>
+            <tr>
+              <th>证券代码</th>
+              <th>委托方向</th> <th>委托价格</th> <th>委托数量</th>
+              <th>委托时间</th> 
+              <th>成交价格</th> <th>成交数量</th>
+              <th>交易对方</th> <th>交易时间</th>
+            </tr>
+          </thead>
+          
+          <tbody>
+            {% if commission %}
+              {% for com in commission %}
+                <tr>
+                  <td><a href="#">{{com.stock_symbol}}</a></td>
+                  <td>{{com.operation}}</td>
+                  <td>{{com.price_committed}}</td>
+                  <td>{{com.vol_committed}}</td>
+                  <td>{{com.date_committed}}</td>
+                  <td>{{com.price_traded}}</td>
+                  <td>{{com.vol_traded}}</td>
+                  <td>{{com.opponent_traded|default_if_none:"--"}}</td>
+                  <td>{{com.data_traded}}</td>
+               </tr>
+              {% endfor %}
+            {% else %}
+              <tr>
+                <td>&nbsp;</td>
+                <td>&nbsp;</td> <td>&nbsp;</td> <td>&nbsp;</td>
+                <td>&nbsp;</td> <td>&nbsp;</td> <td>&nbsp;</td>
+                <td>&nbsp;</td> <td>&nbsp;</td>
+              </tr>
+            {% endif %}
+          </tbody>
+          
+        </table>
+      </div>
+    </div>
+</p></br>
+
+<h2>
+  <span class="label label-warning">关注列表</span>
+</h2>
+<p style="line-height:1.6">
+  <ul class="list-group">
+    
+    {% if focusing %}
+      {% for focus in focusing %}
+        <li class="list-group-item">证券代码：<a href="{{ focus.get_stock_url }}">{{focus.stock_symbol}}</a></li>
+      {% endfor %}
+    {% else %}
+      <li class="list-group-item">暂无关注的股票，<a href="#">点击添加</a></li>
+      
+    {% endif %}
+    
+  </ul>
+</p>
+
+{% endblock content %}

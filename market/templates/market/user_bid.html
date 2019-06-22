@@ -1,0 +1,49 @@
+{% extends "market/base.html" %}
+
+{% block header %}
+  <h1>{{client.name}}</h1>
+{% endblock header %}
+
+{% block content %}
+
+<h2>
+  <span class="label label-primary">当前资金</span>
+</h2>
+<p style="line-height:1.6">
+  <ul class="list-group">
+    <li class="list-group-item"> 资金总额：{{client.cash}}</li>
+    <li class="list-group-item"> 冻结资金：{{client.frozen_cash}}</li>
+    <li class="list-group-item"> 可用资金：<strong>{{client.flexible_cash}}</strong></li>
+    <li class="list-group-item"> 当前收益：{{client.profit}}</li>
+
+  </ul>
+</p></br>
+
+<h2>
+  <span class="label label-success">买入股票</span>
+</h2>
+<p style="line-height:1.6">
+  <ul class="list-group">
+    
+    {% if focusing %}
+      {% for focus in focusing %}
+        <li class="list-group-item">证券代码：<a href="{{ focus.get_stock_url }}">{{focus.stock_symbol}}</a></li>
+      {% endfor %}
+    {% else %}
+      <li class="list-group-item">暂无关注的股票，<a href="#">点击添加</a></li>
+      
+    {% endif %}
+    
+  </ul>
+  <form action="" method="post">
+    <div class="col-md-6">
+      {% csrf_token %}
+      <table class="table">
+        {{ form }}
+      </table>
+        <input type="submit" value="提交" />
+    </div>
+  </form>
+</p>
+
+{% endblock content %}

@@ -1,0 +1,17 @@
+{% extends "market/base.html" %}
+
+{% block header %}
+  <div class="jumbotron">
+    <h1>{{user.username}}</h1>
+    <p>欢迎您，您正在使用&nbsp;&nbsp;{{user_agent}}</p>
+    <p><a class="btn btn-primary btn-lg" href="{% url 'market:my_account' %}" role="button">点击进入个人账户</a></p>
+  </div>
+{% endblock header %}
+
+{% block content %}
+  <p style="font-size:24px; line-height:2.0">
+    当前日期：{{time.year}} 年 {{time.month}} 月 {{time.day}} 日</br>
+    虚拟股市中的账户数目为：<strong>{{num_client}} </strong> </br>
+    能进行交易的股票数目为：<strong><a href="{% url 'market:all_stocks' %}">{{num_stock}}</a></strong>
+  </p>
+{% endblock content %}

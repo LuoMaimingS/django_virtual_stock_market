@@ -1,0 +1,27 @@
+{% extends "market/base.html" %}
+
+{% block header %}
+  <h1>{{client.name}}</h1>
+{% endblock header %}
+
+{% block content %}
+<h2 style="line-height:1.6">
+  <ul>
+    <li> 全部资金：{{client.cash}}</li>
+    <li> 冻结资金：{{client.frozen_cash}}</li>
+    <li> 总收益：{{client.profit}}</li>
+    <li> 注册时间：{{client.date_reg}}</li>
+    <li> 客户状态：{{client.status}}</li>
+  </ul>
+  
+  <ul>
+    <li> 持仓情况：{{client.holdingelem_set}}</li>
+    <li> 委托情况：{{client.commissionelem_set}}</li>
+  </ul>
+  
+  <ul>
+    <li> 关注股票：{{client.focuselem_set}}</li>
+  </ul>
+</h2>
+
+{% endblock content %}
