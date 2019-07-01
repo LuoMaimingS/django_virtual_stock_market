@@ -5,12 +5,14 @@ from .models import clients, stocks
 admin.site.register(clients.BaseClient)
 admin.site.register(clients.HoldingElem)
 admin.site.register(clients.CommissionElem)
+admin.site.register(clients.TransactionElem)
 admin.site.register(clients.FocusElem)
 
 admin.site.register(stocks.Stock)
 admin.site.register(stocks.OrderBook)
 admin.site.register(stocks.OrderBookEntry)
 admin.site.register(stocks.OrderBookElem)
+admin.site.register(stocks.TradeHistory)
 
 
 class BaseClientAdmin(admin.ModelAdmin):

@@ -1,7 +1,6 @@
 from django.shortcuts import render
 from django.urls import reverse
 from django.http import HttpResponseRedirect
-from django.views import generic
 from django.contrib.auth import login, authenticate
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.models import User
@@ -9,6 +8,7 @@ from django.contrib.auth.forms import UserCreationForm
 
 from .models import clients, stocks, forms
 from .models import config
+from .models.trades import CommissionMsg, commission_handler
 
 
 def index(request):
@@ -63,12 +63,15 @@ def register(request):
             new_client = clients.BaseClient.objects.create(driver=new_user, name=new_user.username)
 
             # 默认配置虚拟持仓
-            default_stock, found = stocks.Stock.objects.get_or_create(symbol=config.DEFAULT_HOLD_SYMBOL, name=config.DEFAULT_HOLD_NAME)
-            if not found:
+            default_stock, created = stocks.Stock.objects.get_or_create(symbol=config.DEFAULT_HOLD_SYMBOL,
+                                                                        name=config.DEFAULT_HOLD_NAME,
+                                                                        last_price=10, limit_up=11, limit_down=9.1,
+                                                                        high=10, low=10)
+            if created:
                 default_stock.initialize_order_book()
             new_client.holdingelem_set.create(owner=new_client, stock_corr=default_stock, stock_symbol=default_stock.symbol,
                                               stock_name=default_stock.name, vol=config.DEFAULT_HOLD_VOLUME,
-                                              available_vol=config.DEFAULT_HOLD_VOLUME)
+                                              available_vol=config.DEFAULT_HOLD_VOLUME, price_guaranteed=10, cost=10)
 
             # 用户自动登陆，重定向至主页
             authenticated_user = authenticate(username=new_user.username, password=request.POST['password1'])
@@ -99,15 +102,23 @@ def account_view(request):
     user_client, _ = clients.BaseClient.objects.get_or_create(driver=request.user, name=request.user.username)
     holding = clients.HoldingElem.objects.filter(owner=user_client).order_by('stock_symbol')
     commission = clients.CommissionElem.objects.filter(owner=user_client).order_by('stock_symbol')
+    transaction = clients.TransactionElem.objects.filter(owner=user_client).order_by('stock_symbol')
     focusing = clients.FocusElem.objects.filter(owner=user_client).order_by('stock_symbol')
-    context = {'client': user_client, 'holding': holding, 'commission': commission, 'focusing': focusing}
+
+    for hold in holding:
+        user_client.profit = 0
+        hold.refresh()
+        user_client.profit += hold.profit
+    user_client.save()
+    context = {'client': user_client, 'holding': holding, 'commission': commission, 'transaction': transaction,
+               'focusing': focusing}
     return render(request, 'market/my_account.html', context)
 
 
 @login_required
-def bid_view(request):
+def commit_view(request):
     user_client, _ = clients.BaseClient.objects.get_or_create(driver=request.user, name=request.user.username)
-    form = forms.BidForm()
+    err_msg = None
     if request.method == 'POST':
         form = forms.BidForm(request.POST)
 
@@ -115,13 +126,49 @@ def bid_view(request):
             bid_stock = form.cleaned_data['stock_corr']
             bid_price = form.cleaned_data['price_committed']
             bid_volume = form.cleaned_data['vol_committed']
-            # bid_type = form.cleaned_data['bid_type']
-            clients.CommissionElem.objects.create(owner=user_client, stock_corr=bid_stock,
-                                                  stock_symbol=bid_stock.symbol, stock_name=bid_stock.name,
-                                                  operation='b', price_committed=bid_price, vol_committed=bid_volume)
-            return HttpResponseRedirect(reverse('market:my_account'))
+            direction = form.cleaned_data['operation']
+            new_commission = CommissionMsg(commit_client=user_client, stock_symbol=bid_stock.symbol,
+                                           commit_direction=direction, commit_price=bid_price,
+                                           commit_vol=bid_volume)
+            if new_commission.is_valid():
+                commission_handler(new_commission)
+                return HttpResponseRedirect(reverse('market:my_account'))
+            else:
+                return render(request, 'market/invalid_form.html')
+        else:
+            return render(request, 'market/invalid_form.html')
+
     else:
         form = forms.BidForm()
 
-    context = {'client': user_client,'form': form}
-    return render(request, 'market/user_bid.html', context)
+    holding = user_client.holdingelem_set.all()
+    context = {'client': user_client,'form': form, 'holding': holding}
+    return render(request, 'market/user_commit.html', context)
+
+
+@login_required
+def cancel_view(request):
+    user_client, _ = clients.BaseClient.objects.get_or_create(driver=request.user, name=request.user.username)
+    if request.method == 'POST':
+        form = forms.CancelForm(request.POST)
+
+        if form.is_valid():
+            cancel = form.cleaned_data['cancel_cms']
+            new_commission = CommissionMsg(commit_client=user_client, stock_symbol=cancel.stock_symbol,
+                                           commit_direction='c', commit_price=cancel.price_committed,
+                                           commit_vol=cancel.vol_committed - cancel.vol_traded, cancel_cms=cancel,
+                                           commit_date=cancel.date_committed)
+            if new_commission.is_valid():
+                commission_handler(new_commission)
+                return HttpResponseRedirect(reverse('market:my_account'))
+            else:
+                return render(request, 'market/invalid_form.html')
+        else:
+            return render(request, 'market/invalid_form.html')
+
+    else:
+        form = forms.CancelForm()
+
+    commission = user_client.commissionelem_set.all()
+    context = {'client': user_client,'form': form, 'commission': commission}
+    return render(request, 'market/user_cancel.html', context)

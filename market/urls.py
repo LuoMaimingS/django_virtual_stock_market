@@ -26,6 +26,9 @@ urlpatterns = [
     # 用户信息页面
     path('my_account/', views.account_view, name='my_account'),
 
-    # 交易页面：买入
-    path('my_account/bid', views.bid_view, name='bid'),
+    # 交易页面
+    path('my_account/commit', views.commit_view, name='commit'),
+
+    # 撤销委托页面
+    path('my_account/cancel', views.cancel_view, name='cancel')
 ]

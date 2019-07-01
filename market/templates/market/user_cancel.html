@@ -1,0 +1,74 @@
+{% extends "market/base.html" %}
+
+{% block header %}
+  <h1>{{client.name}}</h1>
+{% endblock header %}
+
+{% block content %}
+
+<h2>
+  <span class="label label-info">当前委托</span>
+</h2>
+<p style="line-height:1.6">
+    <div class="row">
+      <div class="col-md-12">
+        <table class="table table-bordered">
+          <thead>
+            <tr>
+              <th>证券代码</th>
+              <th>委托方向</th> <th>委托价格</th> <th>委托数量</th>
+              <th>委托时间</th> 
+              <th>成交均价</th> <th>成交数量</th>
+            </tr>
+          </thead>
+          
+          <tbody>
+            {% if commission %}
+              {% for com in commission %}
+                <tr>
+                  <td><a href="{{ com.stock_corr.get_absolute_url }}">{{com.stock_symbol}}</a></td>
+                  <td>
+                    {% if com.operation == 'b' %}
+                      买入
+                    {% else %}
+                      卖出
+                    {% endif %}
+                  </td>
+                  <td>{{com.price_committed}}</td>
+                  <td>{{com.vol_committed}}</td>
+                  <td>{{com.date_committed}}</td>
+                  <td>{{com.price_traded}}</td>
+                  <td>{{com.vol_traded}}</td>
+               </tr>
+              {% endfor %}
+            {% else %}
+              <tr>
+                <td>&nbsp;</td>
+                <td>&nbsp;</td> <td>&nbsp;</td> <td>&nbsp;</td>
+                <td>&nbsp;</td> <td>&nbsp;</td> <td>&nbsp;</td>
+              </tr>
+            {% endif %}
+          </tbody>
+          
+        </table>
+      </div>
+    </div>
+</p>
+
+<h2>
+  <span class="label label-success">撤销委托</span>
+</h2>
+<p style="line-height:1.6">
+
+  <form action="" method="post">
+    <div class="col-md-6">
+      {% csrf_token %}
+      <table class="table">
+        {{ form }}
+      </table>
+        <input type="submit" value="提交" />
+    </div>
+  </form>
+</p>
+
+{% endblock content %}

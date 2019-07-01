@@ -1,0 +1,83 @@
+{% extends "market/base.html" %}
+
+{% block header %}
+  <h1>{{client.name}}</h1>
+{% endblock header %}
+
+{% block content %}
+
+<h2>
+  <span class="label label-primary">当前资金</span>
+</h2>
+<p style="line-height:1.6">
+  <ul class="list-group">
+    <li class="list-group-item"> 资金总额：{{client.cash}}</li>
+    <li class="list-group-item"> 冻结资金：{{client.frozen_cash}}</li>
+    <li class="list-group-item"> 可用资金：<strong>{{client.flexible_cash}}</strong></li>
+    <li class="list-group-item"> 当前收益：{{client.profit}}</li>
+
+  </ul>
+</p></br>
+
+<h2>
+  <span class="label label-primary">当前持仓</span>
+</h2>
+<p style="line-height:1.6">
+    <div class="row">
+      <div class="col-md-12">
+        <table class="table table-bordered">
+          <thead>
+            <tr>
+              <th>证券代码</th>
+              <th>总股数</th> <th>冻结股数</th> <th>可用股数</th>
+              <th>成本价</th> <th>保本价</th> <th>最新价</th>
+              <th>盈亏</th> <th>市值</th>
+            </tr>
+          </thead>
+          
+          <tbody>
+            {% if holding %}
+              {% for hold in holding %}
+                <tr>
+                  <td><a href="{{ hold.get_stock_url }}">{{hold.stock_symbol}}</a></td>
+                  <td>{{hold.vol}}</td>
+                  <td>{{hold.frozen_vol}}</td>
+                  <td>{{hold.available_vol}}</td>
+                  <td>{{hold.cost}}</td>
+                  <td>{{hold.price_guaranteed}}</td>
+                  <td>{{hold.last_price}}</td>
+                  <td>{{hold.profit}}</td>
+                  <td>{{hold.value}}</td>
+               </tr>
+              {% endfor %}
+            {% else %}
+              <tr>
+                <td>&nbsp;</td>
+                <td>&nbsp;</td> <td>&nbsp;</td> <td>&nbsp;</td>
+                <td>&nbsp;</td> <td>&nbsp;</td> <td>&nbsp;</td>
+                <td>&nbsp;</td> <td>&nbsp;</td>
+              </tr>
+            {% endif %}
+          </tbody>
+          
+        </table>
+      </div>
+    </div>
+    
+<h2>
+  <span class="label label-success">委托交易</span>
+</h2>
+<p style="line-height:1.6">
+
+  <form action="" method="post">
+    <div class="col-md-6">
+      {% csrf_token %}
+      <table class="table">
+        {{ form }}
+      </table>
+        <input type="submit" value="提交" />
+    </div>
+  </form>
+</p>
+
+{% endblock content %}

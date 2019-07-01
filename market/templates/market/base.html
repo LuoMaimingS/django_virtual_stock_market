@@ -35,11 +35,9 @@
             </a>
             <div class="dropdown-menu" aria-labelledby="navbarDropdown">
               <ul>
-                <li><a class="dropdown-item" href="{% url 'market:bid' %}">买入股票</a></li>
-              
-                <li><a class="dropdown-item" href="#">卖出股票</a></li>
+                <li><a class="dropdown-item" href="{% url 'market:commit' %}">委托交易</a></li>
                 
-                <li><a class="dropdown-item" href="#">撤销委托</a></li>
+                <li><a class="dropdown-item" href="{% url 'market:cancel' %}">撤销委托</a></li>
               </ul>
             </div>
           </li>

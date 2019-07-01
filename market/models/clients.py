@@ -1,6 +1,7 @@
 from django.db import models
 from django.contrib.auth.models import User
 from django.urls import reverse
+import uuid
 
 from .config import *
 
@@ -49,9 +50,9 @@ class HoldingElem(models.Model):
     stock_name = models.CharField(max_length=20)
 
     # volume info
-    vol = models.IntegerField(verbose_name='股票总数量')
+    vol = models.IntegerField(verbose_name='股票总数量', default=0)
     frozen_vol = models.IntegerField(verbose_name='冻结数量', default=0)
-    available_vol = models.IntegerField(verbose_name='可用数量')
+    available_vol = models.IntegerField(verbose_name='可用数量', default=0)
 
     # price info
     cost = models.DecimalField(max_digits=MAX_DIGITS, decimal_places=DECIMAL_PLACES, verbose_name='成本价', default=0)
@@ -72,6 +73,12 @@ class HoldingElem(models.Model):
     def __str__(self):
         return self.stock_symbol + '(' + self.stock_name + ')'
 
+    def refresh(self):
+        self.last_price = self.stock_corr.last_price
+        self.profit = (self.last_price - self.cost) * self.vol
+        self.value = self.last_price * self.vol
+        self.save()
+
     def get_stock_url(self):
         """
         Returns the url to the stock.
@@ -83,10 +90,49 @@ class CommissionElem(models.Model):
     """
     Client的委托信息
     """
-    owner = models.ForeignKey(BaseClient, on_delete=models.CASCADE, null=False, related_name="self_side")
+    owner = models.ForeignKey(BaseClient, on_delete=models.CASCADE, null=False)
+    unique_id = models.UUIDField(blank=False, editable=False)
 
     # date info
-    date_committed = models.DateTimeField(auto_now_add=True)
+    date_committed = models.DateTimeField(blank=False)
+
+    # stock corresponding
+    stock_corr = models.ForeignKey('market.Stock', on_delete=models.CASCADE)
+    stock_symbol = models.CharField(max_length=12)
+    stock_name = models.CharField(max_length=20)
+
+    # commission info
+    CLIENT_OPERATION = (
+        ('b', '买入'),
+        ('a', '卖出'),
+    )
+    operation = models.CharField(max_length=1, choices=CLIENT_OPERATION, blank=False, default='b')
+    price_committed = models.DecimalField(max_digits=MAX_DIGITS, decimal_places=DECIMAL_PLACES, verbose_name='委托价格')
+    vol_committed = models.IntegerField(verbose_name='委托数量')
+
+    # trade info
+    price_traded = models.DecimalField(max_digits=MAX_DIGITS, decimal_places=DECIMAL_PLACES, verbose_name='成交均价', default=0)
+    vol_traded = models.IntegerField(verbose_name='成交数量', default=0)
+
+    class Meta:
+        ordering = ['owner', '-date_committed']
+
+    def __str__(self):
+        return self.stock_symbol + '(' + self.stock_name + ')'
+
+    def get_stock_url(self):
+        """
+        Returns the url to the stock.
+        """
+        return reverse('market:stock', args=[str(self.stock_corr.id)])
+
+
+class TransactionElem(models.Model):
+    """
+    Client的成交信息
+    """
+    owner = models.ForeignKey(BaseClient, on_delete=models.CASCADE, null=False, related_name="self_side")
+    unique_id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
 
     # stock corresponding
     stock_corr = models.ForeignKey('market.Stock', on_delete=models.CASCADE)
@@ -99,18 +145,19 @@ class CommissionElem(models.Model):
         ('b', 'BID'),
         ('c', 'CANCEL')
     )
-    operation = models.CharField(max_length=1, choices=CLIENT_OPERATION, blank=False, default='b', help_text='operation')
-    price_committed = models.DecimalField(max_digits=MAX_DIGITS, decimal_places=DECIMAL_PLACES, verbose_name='委托价格')
-    vol_committed = models.IntegerField(verbose_name='委托数量')
+    operation = models.CharField(max_length=1, choices=CLIENT_OPERATION, blank=False, default='b',
+                                 help_text='operation')
 
     # trade info
-    price_traded = models.DecimalField(max_digits=MAX_DIGITS, decimal_places=DECIMAL_PLACES, verbose_name='成交价格', default=0)
+    price_traded = models.DecimalField(max_digits=MAX_DIGITS, decimal_places=DECIMAL_PLACES, verbose_name='成交价格',
+                                       default=0)
     vol_traded = models.IntegerField(verbose_name='成交数量', default=0)
-    opponent_traded = models.ForeignKey(BaseClient, on_delete=models.CASCADE, null=True, blank=True, related_name='oppo_side')
-    date_traded = models.DateTimeField(blank=True, null=True)
+    counterpart = models.ForeignKey(BaseClient, on_delete=models.CASCADE, null=True, blank=True,
+                                    related_name='counterpart')
+    date_traded = models.DateTimeField(blank=False)
 
     class Meta:
-        ordering = ['owner', '-date_committed']
+        ordering = ['owner', '-date_traded']
 
     def __str__(self):
         return self.stock_symbol + '(' + self.stock_name + ')'
