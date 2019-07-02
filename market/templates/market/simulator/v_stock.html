@@ -1,0 +1,35 @@
+{% extends "market/base.html" %}
+
+{% block header %}
+  <h1>{{stock.symbol}}({{stock.name}})(模拟环境)</h1>
+{% endblock header %}
+
+{% block content %}
+<p style="line-height:1.6">
+  <h2>走势</h2>
+  <ul class="list-group">
+    <li class="list-group-item"> 最新价：{{stock.last_price}}</li>
+    <li class="list-group-item"> 最高价：{{stock.high}}</li>
+    <li class="list-group-item"> 最低价：{{stock.low}}</li>
+    <li class="list-group-item"> 涨停价：{{stock.limit_up}}</li>
+    <li class="list-group-item"> 跌停价：{{stock.limit_down}}</li>
+  </ul>
+  
+  <h2>档口</h2>
+  <ul class="list-group">
+    {% for lv in level5_ask %}
+      <li class="list-group-item"> 卖{{forloop.revcounter}}：{{lv.0|default_if_none:"--"}}&nbsp;&nbsp;{{lv.1|default_if_none:"--"}}</li> 
+    {% endfor %}
+    {% for lv in level5_bid %}
+      <li class="list-group-item"> 买{{forloop.counter}}：{{lv.0|default_if_none:"--"}}&nbsp;&nbsp;{{lv.1|default_if_none:"--"}}</li>
+    {% endfor %}
+  </ul>
+  
+  <ul class="list-group">
+    <li class="list-group-item"> 交易量：{{stock.volume}}</li>
+    <li class="list-group-item"> 交易额：{{stock.amount}}</li>
+  </ul>
+
+</p>
+
+{% endblock content %}

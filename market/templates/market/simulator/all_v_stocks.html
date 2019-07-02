@@ -1,0 +1,25 @@
+{% extends "market/base.html" %}
+
+{% block header %}
+  <h1>全部股票（模拟环境）</h1>
+{% endblock header %}
+
+{% block content %}
+  {% if stocks %}
+    <ul>
+
+      {% for stock in stocks %}
+        <li>
+          <p>
+            <a href="{{ stock.get_absolute_url }}">{{ stock.symbol }}</a> ({{stock.name}})
+          </p>
+        </li>
+      {% endfor %}
+    </ul>
+
+  {% else %}
+    <p>模拟股票市场中没有股票</p>
+  {% endif %} 
+
+
+{% endblock content %}

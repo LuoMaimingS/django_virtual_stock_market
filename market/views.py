@@ -6,7 +6,7 @@ from django.contrib.auth.decorators import login_required
 from django.contrib.auth.models import User
 from django.contrib.auth.forms import UserCreationForm
 
-from .models import clients, stocks, forms
+from .models import clients, stocks, forms, sim_market, sim_clients, sim_stocks
 from .models import config
 from .models.trades import CommissionMsg, commission_handler
 
@@ -22,8 +22,8 @@ def all_stocks(request):
     """
     在股票市场中显示全部股票
     """
-    all_stocks = stocks.Stock.objects.order_by('symbol')
-    context = {'stocks': all_stocks}
+    all_the_stocks = stocks.Stock.objects.order_by('symbol')
+    context = {'stocks': all_the_stocks}
     return render(request, 'market/all_stocks.html', context)
 
 
@@ -35,15 +35,6 @@ def stock_detail(request, stock_id):
     ask_info, bid_info = this_stock.get_level5_data()
     context = {'stock': this_stock, 'level5_ask': ask_info, 'level5_bid': bid_info}
     return render(request, 'market/stock.html', context)
-
-
-def client_detail(request, client_id):
-    """
-    具体显示某个client的详细信息
-    """
-    this_client = clients.BaseClient.objects.get(id=client_id)
-    context = {'client': this_client}
-    return render(request, 'market/client.html', context)
 
 
 def register(request):
@@ -134,9 +125,9 @@ def commit_view(request):
                 commission_handler(new_commission)
                 return HttpResponseRedirect(reverse('market:my_account'))
             else:
-                return render(request, 'market/invalid_form.html')
+                return render(request, 'market/invalid/invalid_form.html')
         else:
-            return render(request, 'market/invalid_form.html')
+            return render(request, 'market/invalid/invalid_form.html')
 
     else:
         form = forms.BidForm()
@@ -162,9 +153,9 @@ def cancel_view(request):
                 commission_handler(new_commission)
                 return HttpResponseRedirect(reverse('market:my_account'))
             else:
-                return render(request, 'market/invalid_form.html')
+                return render(request, 'market/invalid/invalid_form.html')
         else:
-            return render(request, 'market/invalid_form.html')
+            return render(request, 'market/invalid/invalid_form.html')
 
     else:
         form = forms.CancelForm()
@@ -172,3 +163,129 @@ def cancel_view(request):
     commission = user_client.commissionelem_set.all()
     context = {'client': user_client,'form': form, 'commission': commission}
     return render(request, 'market/user_cancel.html', context)
+
+
+@login_required
+def simulator_welcome(request):
+    """
+    模拟股市的欢迎页面，需要超级用户权限
+    """
+    # 只有超级用户才有权限进行模拟
+    if not request.user.is_superuser:
+        return render(request, 'market/invalid/no_permission.html')
+
+    num_clients = clients.BaseClient.objects.count()
+    num_v_clients = clients.BaseClient.objects.filter(driver=None).count()
+    num_stocks = sim_stocks.SimStock.objects.count()
+    if sim_market.SimMarket.objects.filter(id=0).exists():
+        sim_market.SimMarket.objects.filter(id=0).delete()
+    market, _ = sim_market.SimMarket.objects.get_or_create(id=0)
+    datetime = market.datetime
+    tick = market.tick
+    context = {'num_clients': num_clients, 'num_stocks': num_stocks, 'num_v_clients': num_v_clients,
+               'datetime': datetime, 'tick': tick}
+    return render(request, 'market/simulator/simulator_welcome.html', context)
+
+
+@login_required
+def all_v_stocks(request):
+    """
+    在模拟股票市场中显示全部虚拟股票
+    """
+    # 只有超级用户才有权限进行模拟
+    if not request.user.is_superuser:
+        return render(request, 'market/invalid/no_permission.html')
+    all_the_v_stocks = sim_stocks.SimStock.objects.order_by('symbol')
+    context = {'stocks': all_the_v_stocks}
+    return render(request, 'market/simulator/all_v_stocks.html', context)
+
+
+@login_required
+def sim_stock_detail(request, stock_id):
+    """
+    具体显示股票市场中某支股票的详细信息
+    """
+    # 只有超级用户才有权限进行模拟
+    if not request.user.is_superuser:
+        return render(request, 'market/invalid/no_permission.html')
+    this_stock = sim_stocks.SimStock.objects.get(id=stock_id)
+    ask_info, bid_info = this_stock.get_level5_data()
+    context = {'stock': this_stock, 'level5_ask': ask_info, 'level5_bid': bid_info}
+    return render(request, 'market/simulator/v_stock.html', context)
+
+
+@login_required
+def simulator_main(request):
+    """
+    模拟股市的主页面
+    """
+    # 只有超级用户才有权限进行模拟
+    if not request.user.is_superuser:
+        return render(request, 'market/invalid/no_permission.html')
+
+    v_clients = clients.BaseClient.objects.filter(driver=None)
+    if request.method == 'POST':
+        client_form = forms.VClientForm(request.POST)
+        stock_form = forms.VStockForm(request.POST)
+
+        if 'sim_client' in request.POST:
+
+            if client_form.is_valid():
+                name = client_form.cleaned_data['name']
+                cash = client_form.cleaned_data['cash']
+                strategy = client_form.cleaned_data['strategy']
+                new_client = clients.BaseClient(name=name, cash=cash, frozen_cash=0, flexible_cash=cash,
+                                                strategy=strategy)
+                new_client.save()
+                stock_corr = client_form.cleaned_data['stock_corr']
+                vol = client_form.cleaned_data['vol']
+                if vol != 0:
+                    market = sim_market.SimMarket.objects.get(id=0)
+                    new_holding = sim_clients.SimHoldingElem(owner=new_client, stock_corr=stock_corr,
+                                                             stock_symbol=stock_corr.symbol, stock_name=stock_corr.name,
+                                                             vol=vol, frozen_vol=0, available_vol=vol,
+                                                             date_bought=market.datetime)
+                    new_holding.save()
+                return HttpResponseRedirect(reverse('market:sim_main'))
+            else:
+                return render(request, 'market/invalid/invalid_form.html')
+
+        elif 'sim_stock' in request.POST:
+            if stock_form.is_valid():
+                stock_symbol = stock_form.cleaned_data['symbol']
+                stock_name = stock_form.cleaned_data['name']
+                new_stock = sim_stocks.SimStock(symbol=stock_symbol, name=stock_name)
+                new_stock.save()
+                new_stock.initialize_order_book()
+                return HttpResponseRedirect(reverse('market:sim_welcome'))
+            else:
+                return render(request, 'market/invalid/invalid_form.html')
+    else:
+        client_form = forms.VClientForm()
+        stock_form = forms.VStockForm()
+
+    context = {'v_clients': v_clients, 'client_form': client_form, 'stock_form': stock_form}
+    return render(request, 'market/simulator/simulator_main.html', context)
+
+
+@login_required
+def simulator_client_detail(request, client_id):
+    """
+    模拟股市的client信息界面
+    """
+    # 只有超级用户才有权限进行查看
+    if not request.user.is_superuser:
+        return render(request, 'market/invalid/no_permission.html')
+
+    this_client = clients.BaseClient.objects.get(id=client_id)
+    holding = sim_clients.SimHoldingElem.objects.filter(owner=this_client).order_by('stock_symbol')
+    commission = sim_clients.SimCommissionElem.objects.filter(owner=this_client).order_by('stock_symbol')
+    transaction = sim_clients.SimTransactionElem.objects.filter(owner=this_client).order_by('stock_symbol')
+
+    for hold in holding:
+        this_client.profit = 0
+        hold.refresh()
+        this_client.profit += hold.profit
+    this_client.save()
+    context = {'client': this_client, 'holding': holding, 'commission': commission, 'transaction': transaction}
+    return render(request, 'market/simulator/client.html', context)

@@ -1,57 +1,19 @@
 from django.db import models
-from django.contrib.auth.models import User
 from django.urls import reverse
 import uuid
 
+from .clients import BaseClient
 from .config import *
-from .utils import *
 
 
-class BaseClient(models.Model):
-    """
-    Model representing A base class
-    """
-    # if it is created by a user, we call it is driven by the user.
-    driver = models.ForeignKey(User, on_delete=models.CASCADE, null=True, blank=True)
-
-    name = models.CharField(max_length=20)
-    cash = models.FloatField(default=CASH)
-    frozen_cash = models.FloatField(default=0)
-    flexible_cash = models.FloatField(default=CASH)
-    profit = models.FloatField(help_text="profit made till now", default=0)
-    date_reg = models.DateTimeField(auto_now_add=True)
-
-    CLIENT_STATUS = (
-        ('a', 'Activate'),
-        ('f', 'forbidden'),
-        ('i', 'Inactivate'),
-    )
-    status = models.CharField(max_length=1, choices=CLIENT_STATUS, blank=True, default='a')
-
-    CLIENT_STRATEGY = (
-        ('n', 'No strategy'),
-    )
-
-    strategy = models.CharField(max_length=1, choices=CLIENT_STRATEGY, default='n')
-
-    class Meta:
-        ordering = ['id']
-
-    def __str__(self):
-        return self.name
-
-    def get_absolute_url(self):
-        return reverse('market:client', args=[str(self.id)])
-
-
-class HoldingElem(models.Model):
+class SimHoldingElem(models.Model):
     """
     Client的持仓信息
     """
     owner = models.ForeignKey(BaseClient, on_delete=models.CASCADE)
 
     # stock corresponding
-    stock_corr = models.ForeignKey('market.Stock', on_delete=models.CASCADE)
+    stock_corr = models.ForeignKey('market.SimStock', on_delete=models.CASCADE)
     stock_symbol = models.CharField(max_length=12)
     stock_name = models.CharField(max_length=20)
 
@@ -71,7 +33,7 @@ class HoldingElem(models.Model):
     value = models.FloatField(verbose_name='市值', default=0)
 
     # date info
-    date_bought = models.DateTimeField(auto_now_add=True)
+    date_bought = models.DateTimeField(blank=True)
 
     class Meta:
         ordering = ['owner', '-date_bought']
@@ -89,10 +51,10 @@ class HoldingElem(models.Model):
         """
         Returns the url to the stock.
         """
-        return reverse('market:stock', args=[str(self.stock_corr.id)])
+        return reverse('market:sim_stock', args=[str(self.stock_corr.id)])
 
 
-class CommissionElem(models.Model):
+class SimCommissionElem(models.Model):
     """
     Client的委托信息
     """
@@ -103,7 +65,7 @@ class CommissionElem(models.Model):
     date_committed = models.DateTimeField(blank=False)
 
     # stock corresponding
-    stock_corr = models.ForeignKey('market.Stock', on_delete=models.CASCADE)
+    stock_corr = models.ForeignKey('market.SimStock', on_delete=models.CASCADE)
     stock_symbol = models.CharField(max_length=12)
     stock_name = models.CharField(max_length=20)
 
@@ -130,18 +92,18 @@ class CommissionElem(models.Model):
         """
         Returns the url to the stock.
         """
-        return reverse('market:stock', args=[str(self.stock_corr.id)])
+        return reverse('market:sim_stock', args=[str(self.stock_corr.id)])
 
 
-class TransactionElem(models.Model):
+class SimTransactionElem(models.Model):
     """
     Client的成交信息
     """
-    owner = models.ForeignKey(BaseClient, on_delete=models.CASCADE, null=False, related_name="self_side")
+    owner = models.ForeignKey(BaseClient, on_delete=models.CASCADE, null=False, related_name="sim_self_side")
     unique_id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
 
     # stock corresponding
-    stock_corr = models.ForeignKey('market.Stock', on_delete=models.CASCADE)
+    stock_corr = models.ForeignKey('market.SimStock', on_delete=models.CASCADE)
     stock_symbol = models.CharField(max_length=12)
     stock_name = models.CharField(max_length=20)
 
@@ -159,7 +121,7 @@ class TransactionElem(models.Model):
                                        default=0)
     vol_traded = models.IntegerField(verbose_name='成交数量', default=0)
     counterpart = models.ForeignKey(BaseClient, on_delete=models.CASCADE, null=True, blank=True,
-                                    related_name='counterpart')
+                                    related_name='sim_counterpart')
     date_traded = models.DateTimeField(blank=False)
 
     class Meta:
@@ -172,29 +134,4 @@ class TransactionElem(models.Model):
         """
         Returns the url to the stock.
         """
-        return reverse('market:stock', args=[str(self.stock_corr.id)])
-
-
-class FocusElem(models.Model):
-    """
-    Client关注的股票信息
-    """
-    owner = models.ForeignKey(BaseClient, on_delete=models.CASCADE)
-    stock_symbol = models.CharField(max_length=12)
-    stock_name = models.CharField(max_length=20)
-
-    # stock corresponding
-    stock_corr = models.ForeignKey('market.Stock', on_delete=models.CASCADE)
-
-    class Meta:
-        ordering = ['owner']
-
-    def __str__(self):
-        return self.stock_symbol + '(' + self.stock_name + ')'
-
-    def get_stock_url(self):
-        """
-        Returns the url to the stock.
-        """
-        return reverse('market:stock', args=[str(self.stock_corr.id)])
-
+        return reverse('market:sim_stock', args=[str(self.stock_corr.id)])

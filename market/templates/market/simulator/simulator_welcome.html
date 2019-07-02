@@ -1,0 +1,18 @@
+{% extends "market/base.html" %}
+
+{% block header %}
+  <div class="jumbotron">
+    <h1>{{user.username}}</h1>
+    <p>欢迎进入股市模拟系统，当前的虚拟时间是：<strong>{{datetime}} </strong></p>
+    <p><a class="btn btn-primary btn-lg" href="{% url 'market:sim_main' %}" role="button">点击开始股市模拟</a></p>
+  </div>
+{% endblock header %}
+
+{% block content %}
+  <p style="font-size:24px; line-height:2.0">
+    虚拟股市中的账户数目为：<strong>{{num_clients}} </strong></br> 
+    &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;非用户控制的数目为：<strong>{{num_v_clients}} </strong></br>
+    能进行交易的股票数目为：<strong><a href="{% url 'market:all_v_stocks' %}">{{num_stocks}}</a></strong></br>
+    当前的虚拟TICK为：<strong>{{tick}} </strong></br> 
+  </p>
+{% endblock content %}
