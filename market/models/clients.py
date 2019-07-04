@@ -2,6 +2,7 @@ from django.db import models
 from django.contrib.auth.models import User
 from django.urls import reverse
 import uuid
+import time
 
 from .config import *
 from .utils import *
@@ -18,7 +19,7 @@ class BaseClient(models.Model):
     cash = models.FloatField(default=CASH)
     frozen_cash = models.FloatField(default=0)
     flexible_cash = models.FloatField(default=CASH)
-    profit = models.FloatField(help_text="profit made till now", default=0)
+    profit = models.FloatField(default=0)
     date_reg = models.DateTimeField(auto_now_add=True)
 
     CLIENT_STATUS = (
@@ -42,6 +43,37 @@ class BaseClient(models.Model):
 
     def get_absolute_url(self):
         return reverse('market:client', args=[str(self.id)])
+
+    def refresh(self):
+        self.profit = 0
+        for hold in self.holdingelem_set.all():
+            hold.refresh()
+        self.save()
+
+    def turn_to_inactive(self):
+        """
+        转向不活跃状态
+        """
+        self.status = 'i'
+        self.save()
+        return True
+
+    def quit(self):
+        """
+        client推出市场时，删除全部的有关数据（除了交易历史），目前可能导致交易历史指向链接不可得的bug
+        """
+        time0 = time.time()
+        self.holdingelem_set.all().delete()
+        self.simholdingelem_set.all().delete()
+        self.commissionelem_set.all().delete()
+        self.simcommissionelem_set.all().delete()
+        self.focuselem_set.all().delete()
+        self.orderbookelem_set.all().delete()
+        self.simorderbookelem_set.all().delete()
+        time1 = time.time()
+        print('client:{} id:{} quits, cost {}s.'.format(self.name, self.id, time1 - time0))
+        self.delete()
+        return True
 
 
 class HoldingElem(models.Model):
@@ -81,8 +113,9 @@ class HoldingElem(models.Model):
 
     def refresh(self):
         self.last_price = self.stock_corr.last_price
-        self.profit = (self.last_price - self.cost) * self.vol
+        self.profit = float((self.last_price - self.cost) * self.vol)
         self.value = self.last_price * self.vol
+        self.owner.profit += self.profit
         self.save()
 
     def get_stock_url(self):

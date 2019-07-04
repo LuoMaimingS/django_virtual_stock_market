@@ -1,6 +1,7 @@
 from django.db import models
 from django.urls import reverse
 import uuid
+import time
 
 from .config import *
 
@@ -29,8 +30,11 @@ class SimStock(models.Model):
     amount = models.FloatField(verbose_name="交易额", null=True, blank=True,
                                help_text="Total traded amount of this stock today", default=0)
 
+    simulating = models.BooleanField(default=False)
+    datetime = models.DateTimeField(blank=True, default=None)
+
     class Meta:
-        ordering = ['symbol']
+        ordering = ['symbol', '-datetime']
 
     def __str__(self):
         """
@@ -48,12 +52,23 @@ class SimStock(models.Model):
         """
         初始化stock的order book
         """
-        SimOrderBook.objects.get_or_create(stock=self)
+        order_book, ok = SimOrderBook.objects.get_or_create(stock=self)
+        return order_book
+
+    @staticmethod
+    def get_the_simulating_stock(symbol):
+        simulating_stocks = SimStock.objects.filter(symbol=symbol, simulating=True).order_by('-datetime')
+        if simulating_stocks.exists():
+            return simulating_stocks[0]
+        else:
+            return None
 
     def trading_behaviour(self, direction, price, vol, datetime, tick):
         """
         发生了一次交易，进行一次更新
         """
+        if not self.simulating:
+            return True
         self.last_price = price
         if price < self.low:
             self.low = price
@@ -70,7 +85,7 @@ class SimStock(models.Model):
         """
         判断自己的买或卖的order book是否为空
         """
-        order_book = SimOrderBook.objects.get(stock=self)
+        order_book, _ = SimOrderBook.objects.get_or_create(stock=self)
         entries = SimOrderBookEntry.objects.filter(order_book=order_book, entry_direction=direction)
         if entries.exists():
             return True
@@ -116,6 +131,19 @@ class SimStock(models.Model):
             bid_info.append((None, None))
 
         return ask_info, bid_info
+
+    def quit(self):
+        time0 = time.time()
+        order_book, _ = SimOrderBook.objects.get_or_create(stock=self)
+        order_book_entries = SimOrderBookEntry.objects.filter(order_book=order_book)
+        for entry in order_book_entries:
+            entry.simorderbookelem_set.all().delete()
+            entry.delete()
+        order_book.delete()
+        time1 = time.time()
+        print('stock:{} id:{} quits, cost {}s.'.format(self.symbol, self.id, time1 - time0))
+        self.delete()
+        return True
 
 
 class SimOrderBook(models.Model):

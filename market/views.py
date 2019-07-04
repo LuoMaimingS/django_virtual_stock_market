@@ -5,9 +5,11 @@ from django.contrib.auth import login, authenticate
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.models import User
 from django.contrib.auth.forms import UserCreationForm
+from decimal import Decimal
+import time
 
 from .models import clients, stocks, forms, sim_market, sim_clients, sim_stocks
-from .models import config
+from .models import config, utils
 from .models.trades import CommissionMsg, commission_handler
 
 
@@ -239,13 +241,15 @@ def simulator_main(request):
                 new_client.save()
                 stock_corr = client_form.cleaned_data['stock_corr']
                 vol = client_form.cleaned_data['vol']
+                market = sim_market.SimMarket.objects.get(id=0)
                 if vol != 0:
-                    market = sim_market.SimMarket.objects.get(id=0)
                     new_holding = sim_clients.SimHoldingElem(owner=new_client, stock_corr=stock_corr,
                                                              stock_symbol=stock_corr.symbol, stock_name=stock_corr.name,
                                                              vol=vol, frozen_vol=0, available_vol=vol,
                                                              date_bought=market.datetime)
                     new_holding.save()
+                market.num_v_clients += 1
+                market.save()
                 return HttpResponseRedirect(reverse('market:sim_main'))
             else:
                 return render(request, 'market/invalid/invalid_form.html')
@@ -254,7 +258,7 @@ def simulator_main(request):
             if stock_form.is_valid():
                 stock_symbol = stock_form.cleaned_data['symbol']
                 stock_name = stock_form.cleaned_data['name']
-                new_stock = sim_stocks.SimStock(symbol=stock_symbol, name=stock_name)
+                new_stock = sim_stocks.SimStock(symbol=stock_symbol, name=stock_name, simulating=True)
                 new_stock.save()
                 new_stock.initialize_order_book()
                 return HttpResponseRedirect(reverse('market:sim_welcome'))
@@ -289,3 +293,155 @@ def simulator_client_detail(request, client_id):
     this_client.save()
     context = {'client': this_client, 'holding': holding, 'commission': commission, 'transaction': transaction}
     return render(request, 'market/simulator/client.html', context)
+
+
+@login_required
+def simulator_reset(request):
+    """
+    重置模拟的股市
+    """
+    if not request.user.is_superuser:
+        return render(request, 'market/invalid/no_permission.html')
+    market = sim_market.SimMarket.objects.get(id=0)
+    sim_clients.SimTransactionElem.objects.all().delete()
+    v_clients = clients.BaseClient.objects.filter(driver=None)
+    for v_client in v_clients:
+        v_client.quit()
+        market.num_v_clients -= 1
+    market.save()
+    v_stocks = sim_stocks.SimStock.objects.filter(simulating=True)
+    for v_stock in v_stocks:
+        v_stock.quit()
+    return HttpResponseRedirect(reverse('market:sim_welcome'))
+
+
+@login_required
+def simulator_reset_all(request):
+    """
+    重置模拟股市的全部数据（包括导入的）
+    """
+    if not request.user.is_superuser:
+        return render(request, 'market/invalid/no_permission.html')
+    market = sim_market.SimMarket.objects.get(id=0)
+    sim_clients.SimTransactionElem.objects.all().delete()
+    v_clients = clients.BaseClient.objects.filter(driver=None)
+    for v_client in v_clients:
+        v_client.quit()
+        market.num_v_clients -= 1
+    market.save()
+    v_stocks = sim_stocks.SimStock.objects.all()
+    for v_stock in v_stocks:
+        v_stock.quit()
+    return HttpResponseRedirect(reverse('market:sim_welcome'))
+
+
+@login_required
+def simulator_import_stock_data(request):
+    """
+    模拟股市导入股票数据
+    """
+    if not request.user.is_superuser:
+        return render(request, 'market/invalid/no_permission.html')
+    if request.method == 'POST':
+        form = forms.ImportStockDataForm(request.POST)
+        if form.is_valid():
+            stock = form.cleaned_data['stock_symbol']
+            start_date = form.cleaned_data['start_date']
+            end_date = form.cleaned_data['end_date']
+            # interval = form.cleaned_data['interval']
+            ok = import_stock_data(stock, start_date, end_date)
+            if ok:
+                return HttpResponseRedirect(reverse('market:sim_welcome'))
+            else:
+                return render(request, 'market/invalid/import_data_failed.html')
+    else:
+        form = forms.ImportStockDataForm()
+    context = {'form': form}
+    return render(request, 'market/simulator/import_data.html', context)
+
+
+def import_stock_data(symbol, start_date, end_date):
+    import os
+    abs_path = os.path.abspath('utils.py')
+    abs_path = abs_path[:-9]
+    path = os.path.join(abs_path, 'market', 'data', symbol)
+    tb = utils.TickTable(path)
+    data = tb.select(symbol, 10180101093000000, 30191231153000000)
+    num_record = len(data)
+    start_datetime = utils.get_int_from_timestamp(start_date)
+    end_datetime = utils.get_int_from_timestamp(end_date)
+    for i in range(num_record):
+        cur_datetime = data.index[i]
+        if cur_datetime < start_datetime:
+            continue
+        if cur_datetime > end_datetime:
+            break
+        if str(cur_datetime)[9:11] == '92':
+            # 集合竞价阶段不导入
+            continue
+        if str(cur_datetime)[12:14] != '00':
+            # 导入每分钟数据
+            continue
+
+        time0 = time.time()
+        data_slice = data.loc[cur_datetime]
+        cur_timestamp = utils.get_timestamp_from_int(cur_datetime)
+        new_sim_stock = sim_stocks.SimStock(symbol=symbol, simulating=False, datetime=cur_timestamp,
+                                            last_price=data_slice['last'], high=data_slice.high,
+                                            low=data_slice.low, limit_up=999, limit_down=0,
+                                            volume=data_slice.volume, amount=data_slice.amount)
+        new_sim_stock.save()
+        order_book = new_sim_stock.initialize_order_book()
+        # 这里的处理有点特殊，感觉循环不太好写……
+        if data_slice.a1 == 0 and data_slice.b1 == 0:
+            continue
+        if data_slice.a1 != 0:
+            new_order_book_entry = sim_stocks.SimOrderBookEntry(order_book=order_book, entry_direction='a',
+                                                                entry_price=data_slice.a1, total_vol=data_slice.a1_v)
+            new_order_book_entry.save()
+        if data_slice.a2 != 0:
+            new_order_book_entry = sim_stocks.SimOrderBookEntry(order_book=order_book, entry_direction='a',
+                                                                entry_price=data_slice.a2, total_vol=data_slice.a2_v)
+            new_order_book_entry.save()
+        if data_slice.a3 != 0:
+            new_order_book_entry = sim_stocks.SimOrderBookEntry(order_book=order_book, entry_direction='a',
+                                                                entry_price=data_slice.a3, total_vol=data_slice.a3_v)
+            new_order_book_entry.save()
+        if data_slice.a4 != 0:
+            new_order_book_entry = sim_stocks.SimOrderBookEntry(order_book=order_book, entry_direction='a',
+                                                                entry_price=data_slice.a4, total_vol=data_slice.a4_v)
+            new_order_book_entry.save()
+        if data_slice.a5 != 0:
+            new_order_book_entry = sim_stocks.SimOrderBookEntry(order_book=order_book, entry_direction='a',
+                                                                entry_price=data_slice.a5, total_vol=data_slice.a5_v)
+            new_order_book_entry.save()
+
+        if data_slice.b1 != 0:
+            new_order_book_entry = sim_stocks.SimOrderBookEntry(order_book=order_book, entry_direction='b',
+                                                                entry_price=data_slice.b1, total_vol=data_slice.b1_v)
+            new_order_book_entry.save()
+        if data_slice.b2 != 0:
+            new_order_book_entry = sim_stocks.SimOrderBookEntry(order_book=order_book, entry_direction='b',
+                                                                entry_price=data_slice.b2, total_vol=data_slice.b2_v)
+            new_order_book_entry.save()
+        if data_slice.b3 != 0:
+            new_order_book_entry = sim_stocks.SimOrderBookEntry(order_book=order_book, entry_direction='b',
+                                                                entry_price=data_slice.b3, total_vol=data_slice.b3_v)
+            new_order_book_entry.save()
+        if data_slice.b4 != 0:
+            new_order_book_entry = sim_stocks.SimOrderBookEntry(order_book=order_book, entry_direction='b',
+                                                                entry_price=data_slice.b4, total_vol=data_slice.b4_v)
+            new_order_book_entry.save()
+        if data_slice.b5 != 0:
+            new_order_book_entry = sim_stocks.SimOrderBookEntry(order_book=order_book, entry_direction='b',
+                                                                entry_price=data_slice.b5, total_vol=data_slice.b5_v)
+            new_order_book_entry.save()
+        time1 = time.time()
+        print('time {} saved, cost {:.2f}s.'.format(cur_datetime, time1 - time0))
+
+    return True
+
+
+
+
+

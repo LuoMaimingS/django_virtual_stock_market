@@ -5,7 +5,7 @@ from .clients import BaseClient, CommissionElem
 from .trades import CommissionMsg
 from .sim_clients import SimHoldingElem
 from .sim_stocks import SimStock
-from .sim_market import AddClient
+from .sim_market import INITIAL_DATETIME, END_DATETIME, AddClient
 from .config import *
 
 
@@ -35,4 +35,11 @@ class VStockForm(forms.ModelForm):
         model = SimStock
         fields = ['symbol', 'name']
         labels = {'symbol': '股票代码', 'name': '股票名称'}
+
+
+class ImportStockDataForm(forms.Form):
+    stock_symbol = forms.CharField(max_length=12, label='股票代码')
+    start_date = forms.SplitDateTimeField(label='起始时间', initial=INITIAL_DATETIME)
+    end_date = forms.SplitDateTimeField(label='截止时间', initial=END_DATETIME)
+    # interval = forms.IntegerField(label='时间间隔（秒）', initial=60, help_text='需要是3的倍数')
 

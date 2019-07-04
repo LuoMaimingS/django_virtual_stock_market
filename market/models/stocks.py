@@ -80,7 +80,7 @@ class Stock(models.Model):
     def get_order_book_info(self):
         ask_info = []
         bid_info = []
-        order_book = OrderBook.objects.get(stock=self)
+        order_book, _ = OrderBook.objects.get_or_create(stock=self)
         order_book_entries = OrderBookEntry.objects.filter(order_book=order_book).order_by('entry_price')
         if order_book_entries is not None:
             for entry in order_book_entries:

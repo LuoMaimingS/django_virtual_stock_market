@@ -36,7 +36,7 @@ def sim_instant_trade(msg):
     initiator = msg.initiator_client
     stock_symbol = msg.stock_symbol
 
-    stock_corr = SimStock.objects.get(symbol=stock_symbol)
+    stock_corr = SimStock.get_the_simulating_stock(symbol=stock_symbol)
     new_transaction = SimTransactionElem(owner=initiator, stock_corr=stock_corr, stock_symbol=stock_symbol,
                                          price_traded=msg.trade_price, vol_traded=msg.trade_vol,
                                          counterpart=msg.counterpart, date_traded=msg.trade_date)
@@ -109,7 +109,7 @@ def sim_delayed_trade(msg):
     else:
         acceptor_direction = 'a'
 
-    stock_corr = SimStock.objects.get(symbol=stock_symbol)
+    stock_corr = SimStock.get_the_simulating_stock(symbol=stock_symbol)
     new_transaction = SimTransactionElem(owner=acceptor, stock_corr=stock_corr, stock_symbol=stock_symbol,
                                          stock_name=stock_corr.name, operation=acceptor_direction,
                                          price_traded=msg.trade_price, vol_traded=msg.trade_vol,
@@ -155,7 +155,7 @@ def sim_delayed_trade(msg):
     elif acceptor_direction == 'b':
         # 买入，建仓
         new_holding, cflag = SimHoldingElem.objects.get_or_create(owner=acceptor, stock_corr=stock_corr,
-                                                               stock_symbol=stock_symbol, stock_name=stock_corr.name)
+                                                                  stock_symbol=stock_symbol, stock_name=stock_corr.name)
         if cflag:
             # 创建了新的对象，即买入新的股票
             new_holding.vol = msg.trade_vol
@@ -209,11 +209,10 @@ class SimCommissionMsg(models.Model):
         判断委托信息是否合法
         :return: 合法则返回True
         """
-        if not SimStock.objects.filter(symbol=self.stock_symbol).exists():
+        stock_corr = SimStock.get_the_simulating_stock(symbol=self.stock_symbol)
+        if stock_corr is None:
             # 委托的股票标的不存在
             return False
-        else:
-            stock_corr = SimStock.objects.get(symbol=self.stock_symbol)
         if self.commit_price > stock_corr.limit_up or self.commit_price < stock_corr.limit_down:
             # 委托价格，需要在涨跌停价之间
             return False
@@ -301,6 +300,7 @@ def sim_order_book_matching(commission):
     assert commission.confirmed is False
 
     stock_corr = SimStock.objects.get(symbol=commission.stock_symbol)
+    assert stock_corr.simulating is True
     direction = commission.commit_direction
     remaining_vol = commission.commit_vol
 

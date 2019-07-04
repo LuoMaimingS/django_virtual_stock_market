@@ -47,4 +47,13 @@ urlpatterns = [
 
     # 单支股票页面
     path('simulator/v_stocks/<int:stock_id>', views.sim_stock_detail, name='sim_stock'),
+
+    # 重置股市模拟系统
+    path('simulator/reset', views.simulator_reset, name='sim_reset'),
+
+    # 重置全部数据
+    path('simulator/reset_all', views.simulator_reset_all, name='sim_reset_all'),
+
+    # 导入股票数据
+    path('simulator/import_data', views.simulator_import_stock_data, name='sim_import'),
 ]
