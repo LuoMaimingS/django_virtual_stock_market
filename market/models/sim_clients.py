@@ -33,13 +33,13 @@ class SimHoldingElem(models.Model):
     value = models.FloatField(verbose_name='市值', default=0)
 
     # date info
-    date_bought = models.DateTimeField(blank=True)
+    date_bought = models.DateTimeField(blank=True, null=True)
 
     class Meta:
         ordering = ['owner', '-date_bought']
 
     def __str__(self):
-        return self.stock_symbol + '(' + self.stock_name + ')'
+        return self.stock_symbol + '(' + self.stock_name + ')' + str(self.vol)
 
     def refresh(self):
         self.last_price = self.stock_corr.last_price

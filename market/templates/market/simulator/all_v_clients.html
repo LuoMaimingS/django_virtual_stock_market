@@ -1,0 +1,42 @@
+{% extends "market/base.html" %}
+
+{% block header %}
+  <h1>全部虚拟客户</h1>
+{% endblock header %}
+
+{% block content %}
+  {% if v_clients %}
+    <ul>
+
+      {% for client in v_clients %}
+        <li>
+          <p>
+            <a href="{{ client.get_v_client_url }}">{{ client.id }}</a> ({{client.name}}，策略：{{client.strategy}})
+          </p>
+        </li>
+      {% endfor %}
+    </ul>
+
+  {% else %}
+    <p>市场中没有虚拟客户</p>
+  {% endif %} 
+
+<div>
+<h2>
+  <span class="label label-success">添加虚拟客户</span>
+</h2>
+  <form action="" method="post">
+    <div class="row-md-6">
+      {% csrf_token %}
+      <table class="table">
+        {{ client_form }}
+      </table>
+        <input type="submit" name="sim_client" value="添加" />
+    </div>
+  </form>
+</div>
+
+
+
+
+{% endblock content %}

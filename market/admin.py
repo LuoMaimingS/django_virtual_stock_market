@@ -24,6 +24,8 @@ admin.site.register(sim_stocks.SimOrderBook)
 admin.site.register(sim_stocks.SimOrderBookEntry)
 admin.site.register(sim_stocks.SimOrderBookElem)
 admin.site.register(sim_stocks.SimTradeHistory)
+admin.site.register(sim_stocks.SimStockSlice)
+admin.site.register(sim_stocks.SimStockDailyInfo)
 
 
 class BaseClientAdmin(admin.ModelAdmin):

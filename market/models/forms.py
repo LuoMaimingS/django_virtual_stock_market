@@ -43,3 +43,7 @@ class ImportStockDataForm(forms.Form):
     end_date = forms.SplitDateTimeField(label='截止时间', initial=END_DATETIME)
     # interval = forms.IntegerField(label='时间间隔（秒）', initial=60, help_text='需要是3的倍数')
 
+
+class AnchorForm(forms.Form):
+    anchor_datetime = forms.SplitDateTimeField(label='起始时间', initial=INITIAL_DATETIME)
+

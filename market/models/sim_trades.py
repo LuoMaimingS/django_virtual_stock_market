@@ -2,6 +2,7 @@ from django.db import models
 from django.db.models import Max, Min
 import uuid
 from decimal import Decimal
+import time
 
 from .clients import BaseClient
 from .sim_market import SimMarket
@@ -36,7 +37,7 @@ def sim_instant_trade(msg):
     initiator = msg.initiator_client
     stock_symbol = msg.stock_symbol
 
-    stock_corr = SimStock.get_the_simulating_stock(symbol=stock_symbol)
+    stock_corr = SimStock.objects.get(symbol=msg.stock_symbol)
     new_transaction = SimTransactionElem(owner=initiator, stock_corr=stock_corr, stock_symbol=stock_symbol,
                                          price_traded=msg.trade_price, vol_traded=msg.trade_vol,
                                          counterpart=msg.counterpart, date_traded=msg.trade_date)
@@ -64,7 +65,8 @@ def sim_instant_trade(msg):
     elif msg.trade_direction == 'b':
         # 买入
         new_holding, cflag = SimHoldingElem.objects.get_or_create(owner=initiator, stock_corr=stock_corr,
-                                                                  stock_symbol=stock_symbol, stock_name=stock_corr.name)
+                                                                  stock_symbol=stock_symbol, stock_name=stock_corr.name,
+                                                                  date_bought=msg.trade_date)
         if cflag:
             # 创建了新的对象，即买入新的股票
             new_holding.vol = msg.trade_vol
@@ -109,7 +111,7 @@ def sim_delayed_trade(msg):
     else:
         acceptor_direction = 'a'
 
-    stock_corr = SimStock.get_the_simulating_stock(symbol=stock_symbol)
+    stock_corr = SimStock.objects.get(symbol=stock_symbol)
     new_transaction = SimTransactionElem(owner=acceptor, stock_corr=stock_corr, stock_symbol=stock_symbol,
                                          stock_name=stock_corr.name, operation=acceptor_direction,
                                          price_traded=msg.trade_price, vol_traded=msg.trade_vol,
@@ -209,13 +211,15 @@ class SimCommissionMsg(models.Model):
         判断委托信息是否合法
         :return: 合法则返回True
         """
-        stock_corr = SimStock.get_the_simulating_stock(symbol=self.stock_symbol)
-        if stock_corr is None:
+        if not SimStock.objects.filter(symbol=self.stock_symbol).exists():
             # 委托的股票标的不存在
             return False
-        if self.commit_price > stock_corr.limit_up or self.commit_price < stock_corr.limit_down:
-            # 委托价格，需要在涨跌停价之间
-            return False
+        else:
+            stock_corr = SimStock.objects.get(symbol=self.stock_symbol)
+        if stock_corr.limit_up != 0 and stock_corr.limit_down != 0:
+            if self.commit_price > stock_corr.limit_up or self.commit_price < stock_corr.limit_down:
+                # 委托价格，需要在涨跌停价之间
+                return False
         if self.commit_direction not in ['a', 'b', 'c']:
             # 委托方向，需要是买/卖/撤，三者其一
             return False
@@ -249,6 +253,7 @@ def sim_add_commission(msg):
     assert msg.confirmed is True
     principle = msg.commit_client
     stock_symbol = msg.stock_symbol
+    market, _ = SimMarket.objects.get_or_create(id=1)
 
     stock_corr = SimStock.objects.get(symbol=stock_symbol)
     order_book = SimOrderBook.objects.get(stock=stock_corr)
@@ -262,7 +267,7 @@ def sim_add_commission(msg):
     order_book_entry.save()
     new_order_book_element = SimOrderBookElem(order_book_entry=order_book_entry, client=msg.commit_client,
                                               direction_committed=msg.commit_direction, price_committed=msg.commit_price,
-                                              vol_committed=msg.commit_vol, date_committed=SimMarket.datetime)
+                                              vol_committed=msg.commit_vol, date_committed=market.datetime)
     new_order_book_element.save()
 
     new_commission = SimCommissionElem(owner=principle, stock_corr=stock_corr, stock_symbol=stock_symbol,
@@ -300,9 +305,9 @@ def sim_order_book_matching(commission):
     assert commission.confirmed is False
 
     stock_corr = SimStock.objects.get(symbol=commission.stock_symbol)
-    assert stock_corr.simulating is True
     direction = commission.commit_direction
     remaining_vol = commission.commit_vol
+    market = SimMarket.objects.get(id=1)
 
     if direction == 'a':
         # 卖出委托
@@ -322,7 +327,7 @@ def sim_order_book_matching(commission):
                                             trade_direction=direction, trade_price=best_element.price_committed,
                                             trade_vol=best_element.vol_committed, counterpart=best_element.client,
                                             commission_id=best_element.unique_id, tax_charged=0,
-                                            trade_date=SimMarket.datetime, trade_tick=SimMarket.tick)
+                                            trade_date=market.datetime, trade_tick=market.tick)
                 trade_message.save()
 
                 # 这应当是并行的
@@ -347,7 +352,7 @@ def sim_order_book_matching(commission):
                                             trade_direction=direction, trade_price=best_element.price_committed,
                                             trade_vol=remaining_vol, counterpart=best_element.client,
                                             commission_id=best_element.unique_id, tax_charged=0,
-                                            trade_date=SimMarket.datetime, trade_tick=SimMarket.tick)
+                                            trade_date=market.datetime, trade_tick=market.tick)
                 trade_message.save()
 
                 # 这应当是并行的
@@ -382,7 +387,7 @@ def sim_order_book_matching(commission):
                                             trade_direction=direction, trade_price=best_element.price_committed,
                                             trade_vol=best_element.vol_committed, counterpart=best_element.client,
                                             commission_id=best_element.unique_id, tax_charged=0,
-                                            trade_date=SimMarket.datetime, trade_tick=SimMarket.tick)
+                                            trade_date=market.datetime, trade_tick=market.tick)
                 trade_message.save()
 
                 # 这应当是并行的
@@ -407,7 +412,7 @@ def sim_order_book_matching(commission):
                                             trade_direction=direction, trade_price=best_element.price_committed,
                                             trade_vol=remaining_vol, counterpart=best_element.client,
                                             commission_id=best_element.unique_id, tax_charged=0,
-                                            trade_date=SimMarket.datetime, trade_tick=SimMarket.tick)
+                                            trade_date=market.datetime, trade_tick=market.tick)
                 trade_message.save()
 
                 # 这应当是并行的
@@ -484,15 +489,24 @@ def sim_commission_handler(new_commission):
     委托的处理函数，如果接受的委托message合法，则根据处理情况，在数据库中建立委托项/加入order book/建立成交记录
     :param new_commission:新收到的委托信息
     """
+    time0 = time.time()
     assert isinstance(new_commission, SimCommissionMsg)
-    # 只有模拟的client才可以进行委托，真实的client不被允许
-    assert new_commission.commit_client.driver is None
     if not new_commission.is_valid():
         return False
+    # 只有虚拟client或者是superuser才可以进行模拟委托
+    if new_commission.commit_client.driver is not None:
+        if not new_commission.commit_client.driver.is_superuser:
+            print('Commission Rejected.')
     sim_order_book_matching(new_commission)
 
     assert new_commission.confirmed
     new_commission.delete()
+    time1 = time.time()
+    print('Commission Handled: symbol-{} {} price-{} vol-{}, Cost {} s.'.format(new_commission.stock_symbol,
+                                                                                new_commission.commit_direction,
+                                                                                new_commission.commit_price,
+                                                                                new_commission.commit_vol,
+                                                                                time1 - time0))
     return True
 
 

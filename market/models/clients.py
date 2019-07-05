@@ -71,7 +71,7 @@ class BaseClient(models.Model):
         self.orderbookelem_set.all().delete()
         self.simorderbookelem_set.all().delete()
         time1 = time.time()
-        print('client:{} id:{} quits, cost {}s.'.format(self.name, self.id, time1 - time0))
+        # print('client:{} id:{} quits, cost {}s.'.format(self.name, self.id, time1 - time0))
         self.delete()
         return True
 
@@ -118,11 +118,11 @@ class HoldingElem(models.Model):
         self.owner.profit += self.profit
         self.save()
 
-    def get_stock_url(self):
+    def get_v_client_url(self):
         """
         Returns the url to the stock.
         """
-        return reverse('market:stock', args=[str(self.stock_corr.id)])
+        return reverse('market:sim_clients', args=[str(self.stock_corr.id)])
 
 
 class CommissionElem(models.Model):

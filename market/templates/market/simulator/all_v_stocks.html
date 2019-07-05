@@ -11,7 +11,7 @@
       {% for stock in stocks %}
         <li>
           <p>
-            <a href="{{ stock.get_absolute_url }}">{{ stock.symbol }}</a> ({{stock.name}})
+            <a href="{{ stock.get_absolute_url }}">{{ stock.symbol }}</a> ({{ stock.get_datetime_bound|safe}})
           </p>
         </li>
       {% endfor %}

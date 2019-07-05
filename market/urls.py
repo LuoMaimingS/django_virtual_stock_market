@@ -39,14 +39,20 @@ urlpatterns = [
     # 股市模拟主页面
     path('simulator/main', views.simulator_main, name='sim_main'),
 
-    # 客户信息页面
-    path('simulator/clients/<int:client_id>', views.simulator_client_detail, name='client'),
+    # 全部虚拟客户页面
+    path('simulator/all_v_clients', views.simulator_v_clients, name='sim_clients'),
 
     # 全部虚拟股票页面
-    path('simulator/all_v_stocks', views.all_v_stocks, name='all_v_stocks'),
+    path('simulator/all_v_stocks', views.simulator_v_stocks, name='sim_stocks'),
+
+    # 客户信息页面
+    path('simulator/v_clients/<int:client_id>', views.simulator_client_detail, name='sim_client'),
 
     # 单支股票页面
-    path('simulator/v_stocks/<int:stock_id>', views.sim_stock_detail, name='sim_stock'),
+    path('simulator/v_stocks/<int:stock_id>', views.simulator_stock_detail, name='sim_stock'),
+
+    # 单支股票历史信息页面
+    path('simulator/v_stocks/daily_info/<int:stock_id>', views.simulator_stock_daily, name='sim_stock_daily'),
 
     # 重置股市模拟系统
     path('simulator/reset', views.simulator_reset, name='sim_reset'),
@@ -56,4 +62,7 @@ urlpatterns = [
 
     # 导入股票数据
     path('simulator/import_data', views.simulator_import_stock_data, name='sim_import'),
+
+    # 切入股市历史截面
+    path('simulator/anchor_in_time_point', views.anchor_in_time_point, name='sim_anchor')
 ]
