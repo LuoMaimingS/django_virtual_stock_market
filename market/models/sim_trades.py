@@ -38,12 +38,9 @@ def sim_instant_trade(msg):
     stock_symbol = msg.stock_symbol
 
     stock_corr = SimStock.objects.get(symbol=msg.stock_symbol)
-    new_transaction = SimTransactionElem(owner=initiator, stock_corr=stock_corr, stock_symbol=stock_symbol,
-                                         price_traded=msg.trade_price, vol_traded=msg.trade_vol,
-                                         counterpart=msg.counterpart, date_traded=msg.trade_date)
-    new_transaction.save()
-    new_transaction.unique_id = msg.trade_id
-    new_transaction.save()
+    SimTransactionElem.objects.create(one_side=initiator.id, the_other_side=msg.counterpart.id, stock_corr=stock_corr,
+                                      stock_symbol=stock_symbol, price_traded=msg.trade_price, vol_traded=msg.trade_vol,
+                                      date_traded=msg.trade_date, operation=msg.trade_direction)
 
     if msg.trade_direction == 'a':
         # 卖出
@@ -56,7 +53,7 @@ def sim_instant_trade(msg):
             # 目前为止已全部卖出，不再持有，删除该条数据
             hold_element.delete()
         else:
-            hold_element.save()
+            hold_element.save(update_fields=['vol', 'available_vol'])
 
         earning = float(msg.trade_price * msg.trade_vol - msg.tax_charged)
         initiator.cash += earning
@@ -64,22 +61,11 @@ def sim_instant_trade(msg):
 
     elif msg.trade_direction == 'b':
         # 买入
-        new_holding, cflag = SimHoldingElem.objects.get_or_create(owner=initiator, stock_corr=stock_corr,
-                                                                  stock_symbol=stock_symbol, stock_name=stock_corr.name,
-                                                                  date_bought=msg.trade_date)
-        if cflag:
-            # 创建了新的对象，即买入新的股票
-            new_holding.vol = msg.trade_vol
-            new_holding.frozen_vol = 0
-            new_holding.available_vol = msg.trade_vol
-            new_holding.cost = msg.trade_price
-            new_holding.price_guaranteed = msg.trade_price
-            new_holding.last_price = stock_corr.last_price
-            new_holding.profit = - msg.tax_charged
-            new_holding.value = stock_corr.last_price * new_holding.vol
-            new_holding.date_bought = msg.trade_date
-        else:
+        holding = SimHoldingElem.objects.filter(owner=initiator, stock_corr=stock_corr)
+        if holding.exists():
             # 之前本就持有该股票
+            assert holding.count() == 1
+            new_holding = holding[0]
             new_holding.cost = (new_holding.cost * new_holding.vol + msg.trade_price * msg.trade_vol) / \
                                (new_holding.vol + msg.trade_vol)
             new_holding.price_guaranteed = new_holding.cost
@@ -88,13 +74,19 @@ def sim_instant_trade(msg):
             new_holding.available_vol += msg.trade_vol
             new_holding.profit -= msg.tax_charged
             new_holding.value = stock_corr.last_price * new_holding.vol
-        new_holding.save()
-
+            new_holding.save()
+        else:
+            # 即买入新的股票
+            SimHoldingElem.objects.create(owner=initiator, stock_corr=stock_corr, stock_symbol=stock_symbol,
+                                          vol=msg.trade_vol, frozen_vol=0, available_vol=msg.trade_vol,
+                                          cost=msg.trade_price, price_guaranteed=msg.trade_price,
+                                          last_price=stock_corr.last_price, profit=- msg.tax_charged,
+                                          value=stock_corr.last_price * msg.trade_vol, date_bought=msg.trade_date)
         spending = float(msg.trade_price * msg.trade_vol + msg.tax_charged)
         initiator.cash -= spending
         initiator.flexible_cash -= spending
 
-    initiator.save()
+    initiator.save(update_fields=['cash', 'flexible_cash'])
     return True
 
 
@@ -112,13 +104,6 @@ def sim_delayed_trade(msg):
         acceptor_direction = 'a'
 
     stock_corr = SimStock.objects.get(symbol=stock_symbol)
-    new_transaction = SimTransactionElem(owner=acceptor, stock_corr=stock_corr, stock_symbol=stock_symbol,
-                                         stock_name=stock_corr.name, operation=acceptor_direction,
-                                         price_traded=msg.trade_price, vol_traded=msg.trade_vol,
-                                         counterpart=msg.initiator_client, date_traded=msg.trade_date)
-    new_transaction.save()
-    new_transaction.unique_id = msg.trade_id
-    new_transaction.save()
 
     # 先处理委托
     commission_element = acceptor.simcommissionelem_set.get(unique_id=msg.commission_id)
@@ -134,7 +119,7 @@ def sim_delayed_trade(msg):
     if commission_element.vol_traded == commission_element.vol_committed:
         commission_element.delete()
     else:
-        commission_element.save()
+        commission_element.save(update_fields=['price_traded', 'vol_traded'])
 
     if acceptor_direction == 'a':
         # 卖出，处理持仓
@@ -147,7 +132,7 @@ def sim_delayed_trade(msg):
             # 该持有的股票目前为止已全部卖出，不再持有，删除该条数据
             hold_element.delete()
         else:
-            hold_element.save()
+            hold_element.save(update_fields=['vol', 'frozen_vol'])
 
         # 结算收益，成交金额减去收益
         earning = float(msg.trade_price * msg.trade_vol - msg.tax_charged)
@@ -156,21 +141,11 @@ def sim_delayed_trade(msg):
 
     elif acceptor_direction == 'b':
         # 买入，建仓
-        new_holding, cflag = SimHoldingElem.objects.get_or_create(owner=acceptor, stock_corr=stock_corr,
-                                                                  stock_symbol=stock_symbol, stock_name=stock_corr.name)
-        if cflag:
-            # 创建了新的对象，即买入新的股票
-            new_holding.vol = msg.trade_vol
-            new_holding.frozen_vol = 0
-            new_holding.available_vol = msg.trade_vol
-            new_holding.cost = msg.trade_price
-            new_holding.price_guaranteed = msg.trade_price
-            new_holding.last_price = stock_corr.last_price
-            new_holding.profit = - msg.tax_charged
-            new_holding.value = stock_corr.last_price * new_holding.vol
-            new_holding.date_bought = msg.trade_date
-        else:
+        holding = SimHoldingElem.objects.filter(owner=acceptor, stock_corr=stock_corr)
+        if holding.exists():
             # 之前本就持有该股票
+            assert holding.count() == 1
+            new_holding = holding[0]
             new_holding.cost = (new_holding.cost * new_holding.vol + msg.trade_price * msg.trade_vol) / \
                                (new_holding.vol + msg.trade_vol)
             new_holding.price_guaranteed = new_holding.cost
@@ -179,15 +154,21 @@ def sim_delayed_trade(msg):
             new_holding.available_vol += msg.trade_vol
             new_holding.profit -= msg.tax_charged
             new_holding.value = stock_corr.last_price * new_holding.vol
-
-        new_holding.save()
+            new_holding.save()
+        else:
+            # 即买入新的股票
+            SimHoldingElem.objects.create(owner=acceptor, stock_corr=stock_corr, stock_symbol=stock_symbol,
+                                          vol=msg.trade_vol, frozen_vol=0, available_vol=msg.trade_vol,
+                                          cost=msg.trade_price, price_guaranteed=msg.trade_price,
+                                          last_price=stock_corr.last_price, profit=- msg.tax_charged,
+                                          value=stock_corr.last_price * msg.trade_vol, date_bought=msg.trade_date)
 
         # 结算交易成本，扣除冻结资金和资金余额
         spending = float(msg.trade_price * msg.trade_vol + msg.tax_charged)
         acceptor.cash -= spending
         acceptor.frozen_cash -= spending
 
-    acceptor.save()
+    acceptor.save(update_fields=['cash', 'frozen_cash', 'flexible_cash'])
     return True
 
 
@@ -213,31 +194,38 @@ class SimCommissionMsg(models.Model):
         """
         if not SimStock.objects.filter(symbol=self.stock_symbol).exists():
             # 委托的股票标的不存在
+            print('The STOCK COMMITTED DOES NOT EXIST!')
             return False
         else:
             stock_corr = SimStock.objects.get(symbol=self.stock_symbol)
         if stock_corr.limit_up != 0 and stock_corr.limit_down != 0:
             if self.commit_price > stock_corr.limit_up or self.commit_price < stock_corr.limit_down:
                 # 委托价格，需要在涨跌停价之间
+                print('COMMIT PRICE MUST BE BETWEEN THE LIMIT UP AND THE LIMIT DOWN!')
                 return False
         if self.commit_direction not in ['a', 'b', 'c']:
             # 委托方向，需要是买/卖/撤，三者其一
+            print('COMMIT DIRECTION INVALID!')
             return False
 
         if self.commit_direction == 'a':
             # 委卖，则委托的股票必须有合理的持仓和充足的可用余额
             if not SimHoldingElem.objects.filter(owner=self.commit_client, stock_symbol=self.stock_symbol).exists():
+                print('DOES NOT HOLD THE STOCK!')
                 return False
             holding_element = SimHoldingElem.objects.get(owner=self.commit_client, stock_symbol=self.stock_symbol)
             if holding_element.available_vol < self.commit_vol:
+                print('DOES NOT HOLD ENOUGH STOCK SHARES!')
                 return False
         elif self.commit_direction == 'b':
             # 委买，则必须有充足的可用余额，能够负担税费的冻结资金
             if self.commit_client.flexible_cash < self.commit_price * self.commit_vol * Decimal(1 + TAX_RATE):
+                print('CAN NOT AFFORD THE FROZEN CASH!')
                 return False
         elif self.commit_direction == 'c':
             # 委托撤单，则必须有合理的委托，撤单即撤销该委托
             if self.cancel_cms is None:
+                print('COMMISSION CANCELED IS NONE!')
                 return False
 
         return True
@@ -249,7 +237,6 @@ def sim_add_commission(msg):
     :param msg:委托的相关信息，是一个CommissionMsg类
     """
     assert isinstance(msg, SimCommissionMsg)
-    assert msg.is_valid()
     assert msg.confirmed is True
     principle = msg.commit_client
     stock_symbol = msg.stock_symbol
@@ -260,22 +247,20 @@ def sim_add_commission(msg):
     order_book_entry, created = order_book.simorderbookentry_set.get_or_create(order_book=order_book,
                                                                                entry_price=msg.commit_price,
                                                                                entry_direction=msg.commit_direction)
-    if created:
-        order_book_entry.total_vol = msg.commit_vol
-    else:
-        order_book_entry.total_vol += msg.commit_vol
-    order_book_entry.save()
-    new_order_book_element = SimOrderBookElem(order_book_entry=order_book_entry, client=msg.commit_client,
-                                              direction_committed=msg.commit_direction, price_committed=msg.commit_price,
-                                              vol_committed=msg.commit_vol, date_committed=market.datetime)
-    new_order_book_element.save()
+    order_book_entry.total_vol += msg.commit_vol
+    order_book_entry.save(update_fields=['total_vol'])
+    new_order_book_element = SimOrderBookElem.objects.create(order_book_entry=order_book_entry,
+                                                             client=msg.commit_client,
+                                                             direction_committed=msg.commit_direction,
+                                                             price_committed=msg.commit_price,
+                                                             vol_committed=msg.commit_vol,
+                                                             date_committed=market.datetime)
 
-    new_commission = SimCommissionElem(owner=principle, stock_corr=stock_corr, stock_symbol=stock_symbol,
+    SimCommissionElem.objects.create(owner=principle, stock_corr=stock_corr, stock_symbol=stock_symbol,
                                        stock_name=stock_corr.name, operation=msg.commit_direction,
                                        price_committed=msg.commit_price, vol_committed=msg.commit_vol,
-                                       date_committed=new_order_book_element.date_committed,
+                                       date_committed=market.datetime,
                                        unique_id=new_order_book_element.unique_id)
-    new_commission.save()
 
     if msg.commit_direction == 'a':
         # 卖出委托
@@ -283,7 +268,7 @@ def sim_add_commission(msg):
         assert msg.commit_vol <= holding.available_vol
         holding.frozen_vol += msg.commit_vol
         holding.available_vol -= msg.commit_vol
-        holding.save()
+        holding.save(update_fields=['frozen_vol', 'available_vol'])
 
     elif msg.commit_direction == 'b':
         # 买入委托
@@ -291,7 +276,7 @@ def sim_add_commission(msg):
         assert freeze <= principle.flexible_cash
         principle.frozen_cash += freeze
         principle.flexible_cash -= freeze
-        principle.save()
+        principle.save(update_fields=['frozen_cash', 'flexible_cash'])
 
     return True
 
@@ -301,7 +286,6 @@ def sim_order_book_matching(commission):
     将client给出的委托信息与order book中所有order进行撮合交易
     """
     assert isinstance(commission, SimCommissionMsg)
-    assert commission.is_valid()
     assert commission.confirmed is False
 
     stock_corr = SimStock.objects.get(symbol=commission.stock_symbol)
@@ -328,7 +312,6 @@ def sim_order_book_matching(commission):
                                             trade_vol=best_element.vol_committed, counterpart=best_element.client,
                                             commission_id=best_element.unique_id, tax_charged=0,
                                             trade_date=market.datetime, trade_tick=market.tick)
-                trade_message.save()
 
                 # 这应当是并行的
                 sim_instant_trade(trade_message)
@@ -340,11 +323,12 @@ def sim_order_book_matching(commission):
                 remaining_vol -= best_element.vol_committed
                 best_entry = best_element.order_book_entry
                 best_entry.total_vol -= best_element.vol_committed
-                best_entry.save(update_fields=['total_vol'])
-
-                best_element.delete()
                 if best_entry.total_vol == 0:
                     best_entry.delete()
+                else:
+                    best_entry.save(update_fields=['total_vol'])
+
+                best_element.delete()
 
             else:
                 # 交易发生，order book中的此条挂单被部分交易
@@ -352,8 +336,7 @@ def sim_order_book_matching(commission):
                                             trade_direction=direction, trade_price=best_element.price_committed,
                                             trade_vol=remaining_vol, counterpart=best_element.client,
                                             commission_id=best_element.unique_id, tax_charged=0,
-                                            trade_date=market.datetime, trade_tick=market.tick)
-                trade_message.save()
+                                            trade_date=market.datetime, trade_tick=market.tick)\
 
                 # 这应当是并行的
                 sim_instant_trade(trade_message)
@@ -366,8 +349,8 @@ def sim_order_book_matching(commission):
                 best_entry = best_element.order_book_entry
                 best_entry.total_vol -= remaining_vol
                 remaining_vol = 0
-                best_element.save()
-                best_entry.save()
+                best_element.save(update_fields=['vol_committed'])
+                best_entry.save(update_fields=['total_vol'])
 
     elif direction == 'b':
         # 买入委托
@@ -388,7 +371,6 @@ def sim_order_book_matching(commission):
                                             trade_vol=best_element.vol_committed, counterpart=best_element.client,
                                             commission_id=best_element.unique_id, tax_charged=0,
                                             trade_date=market.datetime, trade_tick=market.tick)
-                trade_message.save()
 
                 # 这应当是并行的
                 sim_instant_trade(trade_message)
@@ -400,11 +382,12 @@ def sim_order_book_matching(commission):
                 remaining_vol -= best_element.vol_committed
                 best_entry = best_element.order_book_entry
                 best_entry.total_vol -= best_element.vol_committed
-                best_entry.save()
-
-                best_element.delete()
                 if best_entry.total_vol == 0:
                     best_entry.delete()
+                else:
+                    best_entry.save(update_fields=['total_vol'])
+
+                best_element.delete()
 
             else:
                 # 交易发生，order book中的此条挂单被部分交易
@@ -413,7 +396,6 @@ def sim_order_book_matching(commission):
                                             trade_vol=remaining_vol, counterpart=best_element.client,
                                             commission_id=best_element.unique_id, tax_charged=0,
                                             trade_date=market.datetime, trade_tick=market.tick)
-                trade_message.save()
 
                 # 这应当是并行的
                 sim_instant_trade(trade_message)
@@ -426,8 +408,8 @@ def sim_order_book_matching(commission):
                 best_entry = best_element.order_book_entry
                 best_entry.total_vol -= remaining_vol
                 remaining_vol = 0
-                best_element.save()
-                best_entry.save()
+                best_element.save(update_fields=['vol_committed'])
+                best_entry.save(update_fields=['total_vol'])
 
     elif direction == 'c':
         # 撤单
@@ -500,7 +482,6 @@ def sim_commission_handler(new_commission):
     sim_order_book_matching(new_commission)
 
     assert new_commission.confirmed
-    new_commission.delete()
     time1 = time.time()
     print('Commission Handled: symbol-{} {} price-{} vol-{}, Cost {} s.'.format(new_commission.stock_symbol,
                                                                                 new_commission.commit_direction,

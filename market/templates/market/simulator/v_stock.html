@@ -10,7 +10,8 @@
 {% endblock header %}
 
 {% block content %}
-<div id="container" style="width: 1200px;height:400px;"></div>
+<div id="container0" style="width: 1200px;height:400px;"></div>
+<div id="container1" style="width: 1200px;height:400px;"></div>
 <p style="line-height:1.6">
   <h2>走势</h2>
   <ul class="list-group">
@@ -62,7 +63,32 @@
                 data: {{price_log|safe}}
             },]
         };
-        var chart = Highcharts.chart('container', options);
+        var chart = Highcharts.chart('container0', options);
+        
+        var options1 = {
+            chart: {
+                type: 'line'
+            },
+            title: {
+                text: '价格走势'
+            },
+            xAxis: {
+              title: {
+                text: 'TICK'
+                },
+              categories: {{tick|safe}}
+            },
+            yAxis: {
+                title: {
+                    text: '价格'
+                }
+            },
+            series: [{
+                name: '',
+                data: {{price_generated|safe}}
+            },]
+        };
+        var chart = Highcharts.chart('container1', options1);
     </script>
 
 {% endblock content %}

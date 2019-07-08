@@ -99,7 +99,8 @@ class SimTransactionElem(models.Model):
     """
     Client的成交信息
     """
-    owner = models.ForeignKey(BaseClient, on_delete=models.CASCADE, null=False, related_name="sim_self_side")
+    one_side = models.IntegerField(help_text='交易一方的ID')
+    the_other_side = models.IntegerField(help_text='交易另一方的ID')
     unique_id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
 
     # stock corresponding
@@ -120,12 +121,10 @@ class SimTransactionElem(models.Model):
     price_traded = models.DecimalField(max_digits=MAX_DIGITS, decimal_places=DECIMAL_PLACES, verbose_name='成交价格',
                                        default=0)
     vol_traded = models.IntegerField(verbose_name='成交数量', default=0)
-    counterpart = models.ForeignKey(BaseClient, on_delete=models.CASCADE, null=True, blank=True,
-                                    related_name='sim_counterpart')
     date_traded = models.DateTimeField(blank=False)
 
     class Meta:
-        ordering = ['owner', '-date_traded']
+        ordering = ['one_side', '-date_traded']
 
     def __str__(self):
         return self.stock_symbol + '(' + self.stock_name + ')'

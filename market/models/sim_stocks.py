@@ -68,8 +68,7 @@ class SimStock(models.Model):
         self.amount += float(price * vol)
         self.save()
 
-        new_trade = SimTradeHistory(stock=self, direction=direction, price=price, vol=vol, datetime=datetime, tick=tick)
-        new_trade.save()
+        SimTradeHistory.objects.create(stock=self, direction=direction, price=price, vol=vol, datetime=datetime, tick=tick)
 
     def is_order_book_empty(self, direction):
         """
@@ -97,6 +96,14 @@ class SimStock(models.Model):
                     raise ValueError('Invalid direction in order book entries!')
 
         return ask_info, bid_info
+
+    def get_level1_data(self):
+        order_book = SimOrderBook.objects.get(stock=self)
+        best_ask_price = SimOrderBookEntry.objects.filter(order_book=order_book, entry_direction='a').order_by(
+            'entry_price')[0].entry_price
+        best_bid_price = SimOrderBookEntry.objects.filter(order_book=order_book, entry_direction='b').order_by(
+            '-entry_price')[0].entry_price
+        return best_ask_price, best_bid_price
 
     def get_level5_data(self):
         ask_info = []
@@ -140,7 +147,6 @@ class SimStock(models.Model):
         for entry in order_book_entries:
             entry.simorderbookelem_set.all().delete()
             entry.delete()
-        order_book.delete()
         self.amount = 0
         self.volume = 0
         self.last_price = 0
@@ -258,7 +264,7 @@ class SimOrderBook(models.Model):
         else:
             if direction == 'a':
                 # 得到最早的卖一条目
-                best_entry = self.simorderbookentry_set.filter(entry_direction=direction).order_by('entry_price')[0]
+                best_entry = self.simorderbookentry_set.filter(entry_direction=direction).select_related().order_by('entry_price')[0]
                 best_element = best_entry.simorderbookelem_set.all().order_by('-date_committed')[0]
                 return best_element
             elif direction == 'b':
@@ -326,8 +332,8 @@ class SimTradeHistory(models.Model):
     tick = models.IntegerField(blank=False)
 
     class Meta:
-        ordering = ['stock']
+        ordering = ['stock', 'tick', 'id']
 
     def __str__(self):
-        return self.stock.symbol + '(' + self.stock.name + ')'
+        return self.stock.symbol + '(' + self.stock.name + ')' + str(self.direction) + str(self.price) + str(self.id)
 

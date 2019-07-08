@@ -15,6 +15,11 @@ class SimMarket(models.Model):
     tick = models.IntegerField(default=0)
     num_v_clients = models.IntegerField(default=0)
 
+    def reset(self):
+        self.datetime = INITIAL_DATETIME
+        self.tick = 0
+        self.save()
+
 
 def generate_ordered_client_name():
     market, _ = SimMarket.objects.get_or_create(id=1)

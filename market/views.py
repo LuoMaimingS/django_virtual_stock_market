@@ -227,8 +227,25 @@ def simulator_stock_detail(request, stock_id):
         price_log.append(float(each_slice.last_price))
         volume_log.append(each_slice.volume)
 
+    # 读取生成数据
+    generate_trades = sim_stocks.SimTradeHistory.objects.filter(stock=this_stock).order_by('tick' ,'id').reverse()
+    print(generate_trades)
+    prev_tick = None
+    price_generated = []
+    for trade in generate_trades:
+        if prev_tick != trade.tick:
+            print('append', prev_tick, trade.tick, trade.id)
+            price_generated.append(float(trade.price))
+            prev_tick = trade.tick
+        else:
+            continue
+    price_generated.reverse()
+    print(price_generated)
+    tick = list(range(len(price_generated) + 1))
+    tick.remove(0)
     context = {'stock': this_stock, 'level5_ask': ask_info, 'level5_bid': bid_info, 'time': cur_datetime,
-               'time_log': json.dumps(time_log), 'price_log': json.dumps(price_log), 'volume_log': json.dumps(volume_log)}
+               'time_log': json.dumps(time_log), 'price_log': json.dumps(price_log), 'volume_log': json.dumps(volume_log),
+               'tick': json.dumps(tick), 'price_generated': json.dumps(price_generated)}
     return render(request, 'market/simulator/v_stock.html', context)
 
 
@@ -320,7 +337,7 @@ def simulator_client_detail(request, client_id):
     this_client = clients.BaseClient.objects.get(id=client_id)
     holding = sim_clients.SimHoldingElem.objects.filter(owner=this_client).order_by('stock_symbol')
     commission = sim_clients.SimCommissionElem.objects.filter(owner=this_client).order_by('stock_symbol')
-    transaction = sim_clients.SimTransactionElem.objects.filter(owner=this_client).order_by('stock_symbol')
+    transaction = sim_clients.SimTransactionElem.objects.filter(one_side=this_client.id).order_by('stock_symbol')
 
     for hold in holding:
         this_client.profit = 0
@@ -348,6 +365,7 @@ def simulator_reset_handler(request, superuser_client):
     assert isinstance(superuser_client, clients.BaseClient)
     market = sim_market.SimMarket.objects.get(id=1)
     sim_clients.SimTransactionElem.objects.all().delete()
+    sim_stocks.SimTradeHistory.objects.all().delete()
     v_clients = clients.BaseClient.objects.filter(driver=None)
     for v_client in v_clients:
         v_client.quit()
