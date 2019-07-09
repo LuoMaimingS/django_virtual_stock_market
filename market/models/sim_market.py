@@ -6,7 +6,7 @@ from .utils import *
 from .config import *
 
 INITIAL_DATETIME = datetime.datetime.strptime('2018-1-2 9:30', '%Y-%m-%d %H:%M')
-END_DATETIME = datetime.datetime.strptime('2018-1-3 9:50', '%Y-%m-%d %H:%M')
+END_DATETIME = datetime.datetime.strptime('2018-1-2 9:50', '%Y-%m-%d %H:%M')
 
 
 class SimMarket(models.Model):

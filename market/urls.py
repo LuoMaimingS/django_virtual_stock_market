@@ -54,6 +54,11 @@ urlpatterns = [
     # 单支股票历史信息页面
     path('simulator/v_stocks/daily_info/<int:stock_id>', views.simulator_stock_daily, name='sim_stock_daily'),
 
+    # 单支股票tick截面页面
+    path('simulator/v_stocks/tick_info/<int:stock_id>', views.simulator_stock_tick, name='sim_stock_tick'),
+    path('simulator/v_stocks/prev_tick_info/<int:stock_id>', views.simulator_stock_prev_tick, name='sim_stock_prev_tick'),
+    path('simulator/v_stocks/next_tick_info/<int:stock_id>', views.simulator_stock_next_tick, name='sim_stock_next_tick'),
+
     # 重置股市模拟系统
     path('simulator/reset', views.simulator_reset, name='sim_reset'),
 

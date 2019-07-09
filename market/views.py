@@ -228,19 +228,16 @@ def simulator_stock_detail(request, stock_id):
         volume_log.append(each_slice.volume)
 
     # 读取生成数据
-    generate_trades = sim_stocks.SimTradeHistory.objects.filter(stock=this_stock).order_by('tick' ,'id').reverse()
-    print(generate_trades)
+    generate_trades = sim_stocks.SimTradeHistory.objects.filter(stock=this_stock).order_by('tick','id').reverse()
     prev_tick = None
     price_generated = []
     for trade in generate_trades:
         if prev_tick != trade.tick:
-            print('append', prev_tick, trade.tick, trade.id)
             price_generated.append(float(trade.price))
             prev_tick = trade.tick
         else:
             continue
     price_generated.reverse()
-    print(price_generated)
     tick = list(range(len(price_generated) + 1))
     tick.remove(0)
     context = {'stock': this_stock, 'level5_ask': ask_info, 'level5_bid': bid_info, 'time': cur_datetime,
@@ -249,6 +246,7 @@ def simulator_stock_detail(request, stock_id):
     return render(request, 'market/simulator/v_stock.html', context)
 
 
+@login_required
 def simulator_stock_daily(request, stock_id):
     """
     显示股票市场中某支股票的历史信息
@@ -270,6 +268,81 @@ def simulator_stock_daily(request, stock_id):
     context = {'stock': this_stock, 'time': cur_datetime,
                'candles': json.dumps(candles), 'volume': json.dumps(volume)}
     return render(request, 'market/simulator/v_stock_daily.html', context)
+
+
+@login_required
+def simulator_stock_tick(request, stock_id):
+    """
+    显示股票市场中某支股票的tick截面信息
+    """
+    if not request.user.is_superuser:
+        return render(request, 'market/invalid/no_permission.html')
+    this_stock = sim_stocks.SimStock.objects.get(id=stock_id)
+    market = sim_market.SimMarket.objects.get(id=1)
+    cur_datetime = market.datetime
+    stock_tick_info = sim_stocks.SimStockSlice.objects.filter(stock=this_stock, datetime=cur_datetime)
+    ask_info = None
+    bid_info = None
+    tick_info = None
+    if stock_tick_info.exists():
+        ask_info, bid_info = stock_tick_info[0].get_level5_data()
+        tick_info = stock_tick_info[0]
+
+    context = {'stock': this_stock, 'info': tick_info, 'level5_ask': ask_info, 'level5_bid': bid_info, 'time': str(cur_datetime)}
+    return render(request, 'market/simulator/v_stock_tick.html', context)
+
+
+@login_required
+def simulator_stock_prev_tick(request, stock_id):
+    """
+    显示股票市场中某支股票的tick截面信息
+    """
+    if not request.user.is_superuser:
+        return render(request, 'market/invalid/no_permission.html')
+    print('prev')
+    this_stock = sim_stocks.SimStock.objects.get(id=stock_id)
+    market = sim_market.SimMarket.objects.get(id=1)
+    cur_datetime = market.datetime
+    stock_tick_info = sim_stocks.SimStockSlice.objects.get(stock=this_stock, datetime=cur_datetime)
+    prev_info = sim_stocks.SimStockSlice.objects.filter(id=stock_tick_info.id - 1)
+    ask_info = None
+    bid_info = None
+    tick_info = None
+    if prev_info.exists():
+        tick_info = prev_info[0]
+        ask_info, bid_info = prev_info[0].get_level5_data()
+        market.datetime = prev_info[0].datetime
+        market.save()
+        cur_datetime = market.datetime
+
+    context = {'stock': this_stock, 'info': tick_info, 'level5_ask': ask_info, 'level5_bid': bid_info, 'time': str(cur_datetime)}
+    return render(request, 'market/simulator/v_stock_tick.html', context)
+
+
+@login_required
+def simulator_stock_next_tick(request, stock_id):
+    """
+    显示股票市场中某支股票的tick截面信息
+    """
+    if not request.user.is_superuser:
+        return render(request, 'market/invalid/no_permission.html')
+    this_stock = sim_stocks.SimStock.objects.get(id=stock_id)
+    market = sim_market.SimMarket.objects.get(id=1)
+    cur_datetime = market.datetime
+    stock_tick_info = sim_stocks.SimStockSlice.objects.get(stock=this_stock, datetime=cur_datetime)
+    next_info = sim_stocks.SimStockSlice.objects.filter(id=stock_tick_info.id + 1)
+    ask_info = None
+    bid_info = None
+    tick_info = None
+    if next_info.exists():
+        tick_info = next_info[0]
+        ask_info, bid_info = next_info[0].get_level5_data()
+        market.datetime = next_info[0].datetime
+        market.save()
+        cur_datetime = market.datetime
+
+    context = {'stock': this_stock, 'info': tick_info, 'level5_ask': ask_info, 'level5_bid': bid_info, 'time': str(cur_datetime)}
+    return render(request, 'market/simulator/v_stock_tick.html', context)
 
 
 @login_required
@@ -447,6 +520,7 @@ def import_stock_data(symbol, start_date, end_date):
     prev_imported_time = None
     open_today = 0.0
     time0 = time.time()
+    count = 0
     for i in range(num_record):
         cur_datetime = data.index[i]
         if cur_datetime < start_datetime:
@@ -473,12 +547,14 @@ def import_stock_data(symbol, start_date, end_date):
             continue
 
         # 导入每分钟数据，加入偏移，尽量同步每个整分钟
+        """
         if (str(prev_imported_time)[12:14] == '03' or str(prev_imported_time)[12:14] == '06') and \
                 str(cur_datetime)[12:14] == '00':
             pass
         else:
             if prev_imported_time is not None and cur_datetime - prev_imported_time < 100000:
                 continue
+        """
 
         data_slice = data.loc[cur_datetime]
         if prev_imported_time is None:
@@ -497,6 +573,10 @@ def import_stock_data(symbol, start_date, end_date):
                                          amount=data_slice.amount, volume=data_slice.volume)
         stick.save()
         prev_imported_time = cur_datetime
+        count += 1
+        if count == 10:
+            print('{} imported.'.format(cur_timestamp))
+            count = 0
 
     return True
 

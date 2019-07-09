@@ -48,6 +48,15 @@ class SimStock(models.Model):
     def get_daily_absolute_url(self):
         return reverse('market:sim_stock_daily', args=[str(self.id)])
 
+    def get_tick_absolute_url(self):
+        return reverse('market:sim_stock_tick', args=[str(self.id)])
+
+    def get_prev_tick_absolute_url(self):
+        return reverse('market:sim_stock_prev_tick', args=[str(self.id)])
+
+    def get_next_tick_absolute_url(self):
+        return reverse('market:sim_stock_next_tick', args=[str(self.id)])
+
     def initialize_order_book(self):
         """
         初始化stock的order book
@@ -99,11 +108,11 @@ class SimStock(models.Model):
 
     def get_level1_data(self):
         order_book = SimOrderBook.objects.get(stock=self)
-        best_ask_price = SimOrderBookEntry.objects.filter(order_book=order_book, entry_direction='a').order_by(
-            'entry_price')[0].entry_price
-        best_bid_price = SimOrderBookEntry.objects.filter(order_book=order_book, entry_direction='b').order_by(
-            '-entry_price')[0].entry_price
-        return best_ask_price, best_bid_price
+        best_ask = SimOrderBookEntry.objects.filter(order_book=order_book, entry_direction='a').order_by(
+            'entry_price')[0]
+        best_bid = SimOrderBookEntry.objects.filter(order_book=order_book, entry_direction='b').order_by(
+            '-entry_price')[0]
+        return best_ask.entry_price, best_ask.total_vol, best_bid.entry_price, best_bid.total_vol
 
     def get_level5_data(self):
         ask_info = []
@@ -214,6 +223,11 @@ class SimStockSlice(models.Model):
 
     def __str__(self):
         return self.stock.symbol + str(self.datetime)
+
+    def get_level5_data(self):
+        ask_info = [(self.a5, self.a5_v), (self.a4, self.a4_v), (self.a3, self.a3_v), (self.a2, self.a2_v), (self.a1, self.a1_v)]
+        bid_info = [(self.b1, self.b1_v), (self.b2, self.b2_v), (self.b3, self.b3_v), (self.b4, self.b4_v), (self.b5, self.b5_v)]
+        return ask_info, bid_info
 
 
 class SimStockDailyInfo(models.Model):

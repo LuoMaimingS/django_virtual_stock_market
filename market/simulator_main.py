@@ -6,6 +6,7 @@ from .models import sim_market, sim_clients, sim_stocks, sim_trades
 
 
 def simulator_main_func():
+
     market = sim_market.SimMarket.objects.get(id=1)
     datetime = market.datetime
     players = []
@@ -17,18 +18,27 @@ def simulator_main_func():
         if r_client.driver.is_superuser:
             players.append(r_client)
 
-    run_tick = 40
+    run_tick = 10
     stock = sim_stocks.SimStock.objects.get(symbol='000009.XSHE')
 
     for i in range(run_tick):
-        a1, b1 = stock.get_level1_data()
+        a1, a1_v, b1, b1_v = stock.get_level1_data()
         random.shuffle(players)
         for player in players:
+            temp = random.random()
             if player.driver is None:
-                sim_bid(player, '000009.XSHE', a1, 100, datetime)
+                if temp < 0.5:
+                    sim_bid(player, '000009.XSHE', a1, a1_v, datetime)
+                else:
+                    sim_bid(player, '000009.XSHE', a1, 100, datetime)
             else:
-                sim_bid(player, '000009.XSHE', a1, 100, datetime)
-                sim_ask(player, '000009.XSHE', b1, 100, datetime)
+                if temp < 0.5:
+                    sim_bid(player, '000009.XSHE', a1, a1_v, datetime)
+                    sim_ask(player, '000009.XSHE', b1, a1_v, datetime)
+                else:
+                    sim_bid(player, '000009.XSHE', a1, 100, datetime)
+                    sim_ask(player, '000009.XSHE', b1, 100, datetime)
+
         market.tick += 1
         market.save(update_fields=['tick'])
 
@@ -63,6 +73,10 @@ def sim_ask(v_client, symbol, price, vol, datetime):
                                                  commit_price=Decimal(round(price, 2)), commit_vol=vol, commit_date=datetime)
     sim_trades.sim_commission_handler(new_commission)
     return True
+
+
+def calc_tick_action():
+    market = sim_market.SimMarket.objects.get(id=1)
 
 
 

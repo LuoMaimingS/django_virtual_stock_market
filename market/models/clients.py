@@ -31,6 +31,7 @@ class BaseClient(models.Model):
 
     CLIENT_STRATEGY = (
         ('n', 'No strategy'),
+        ('r', 'Random strategy'),
     )
 
     strategy = models.CharField(max_length=1, choices=CLIENT_STRATEGY, default='n')

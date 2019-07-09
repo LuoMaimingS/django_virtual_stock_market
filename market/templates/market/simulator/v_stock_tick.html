@@ -1,0 +1,43 @@
+{% extends "market/base.html" %}
+
+{% block header %}
+  <h1>
+    {{ stock.symbol }}({{ time }})(模拟环境)
+    <a class="btn btn-info btn-lg" href="{{ stock.get_absolute_url }}" role="button">当日数据</a>
+    
+    <a class="btn btn-info btn-lg" href="{{ stock.get_daily_absolute_url }}" role="button">历史数据</a>
+
+    <a class="btn btn-info btn-lg" href="{{ stock.get_tick_absolute_url }}" role="button">tick截面</a>
+  </h1>
+{% endblock header %}
+
+{% block content %}
+<p style="line-height:1.6">
+  <h2>走势</h2>
+  <ul class="list-group">
+    <li class="list-group-item"> 最新价：{{info.last_price}}</li>
+    <li class="list-group-item"> 最高价：{{info.high}}</li>
+    <li class="list-group-item"> 最低价：{{info.low}}</li>
+  </ul>
+  
+  <h2>盘口</h2>
+  <ul class="list-group">
+    {% for lv in level5_ask %}
+      <li class="list-group-item"> 卖{{forloop.revcounter}}：{{lv.0|default_if_none:"--"}}&nbsp;&nbsp;{{lv.1|default_if_none:"--"}}</li> 
+    {% endfor %}
+    {% for lv in level5_bid %}
+      <li class="list-group-item"> 买{{forloop.counter}}：{{lv.0|default_if_none:"--"}}&nbsp;&nbsp;{{lv.1|default_if_none:"--"}}</li>
+    {% endfor %}
+  </ul>
+  
+  <ul class="list-group">
+    <li class="list-group-item"> 交易量：{{info.volume}}</li>
+    <li class="list-group-item"> 交易额：{{info.amount}}</li>
+  </ul>
+</p>
+
+<a class="btn btn-info btn-lg" href="{{ stock.get_prev_tick_absolute_url }}" role="button">上个tick截面</a>
+<a class="btn btn-info btn-lg" href="{{ stock.get_next_tick_absolute_url }}" role="button">下个tick截面</a>
+
+
+{% endblock content %}
