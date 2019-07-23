@@ -111,3 +111,4 @@ venv.bak/
 
 .idea
 *.h5
+*.npz
