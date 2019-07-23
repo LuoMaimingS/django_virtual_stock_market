@@ -1,3 +1,10 @@
+# _*_ coding:UTF-8 _*_
+
+"""
+该文件定义了模拟环境中stock相关的模型，包括自身信息，order book，交易历史等，
+并非虚拟股市原本的模型，做了一些适应性的调整，取消了全部外键。
+"""
+
 from django.db import models
 from django.urls import reverse
 import uuid
@@ -14,21 +21,14 @@ class SimStock(models.Model):
     name = models.CharField(max_length=20)
 
     # Maximum price allowed: 999.99
-    last_price = models.DecimalField(max_digits=MAX_DIGITS, decimal_places=DECIMAL_PLACES, verbose_name="最新价",
-                                     null=True, blank=True, help_text="last price of the stock", default=0)
-    low = models.DecimalField(max_digits=MAX_DIGITS, decimal_places=DECIMAL_PLACES, verbose_name="最低价",
-                              null=True, blank=True, help_text="lowest price of the stock till now today", default=0)
-    high = models.DecimalField(max_digits=MAX_DIGITS, decimal_places=DECIMAL_PLACES, verbose_name="最高价",
-                               null=True, blank=True, help_text="highest price of the stock till now today", default=0)
-    limit_up = models.DecimalField(max_digits=MAX_DIGITS, decimal_places=DECIMAL_PLACES, verbose_name="涨停价",
-                                   null=True, blank=True, help_text="limit up of the stock today", default=0)
-    limit_down = models.DecimalField(max_digits=MAX_DIGITS, decimal_places=DECIMAL_PLACES, verbose_name="跌停价",
-                                     null=True, blank=True, help_text="limit down of the stock today", default=0)
+    last_price = models.DecimalField(max_digits=MAX_DIGITS, decimal_places=DECIMAL_PLACES, verbose_name="最新价", null=True)
+    low = models.DecimalField(max_digits=MAX_DIGITS, decimal_places=DECIMAL_PLACES, verbose_name="最低价", null=True)
+    high = models.DecimalField(max_digits=MAX_DIGITS, decimal_places=DECIMAL_PLACES, verbose_name="最高价", null=True)
+    limit_up = models.DecimalField(max_digits=MAX_DIGITS, decimal_places=DECIMAL_PLACES, verbose_name="涨停价", null=True)
+    limit_down = models.DecimalField(max_digits=MAX_DIGITS, decimal_places=DECIMAL_PLACES, verbose_name="跌停价", null=True)
 
-    volume = models.IntegerField(verbose_name="交易量", null=True, blank=True,
-                                 help_text="Total traded volume of this stock today", default=0)
-    amount = models.FloatField(verbose_name="交易额", null=True, blank=True,
-                               help_text="Total traded amount of this stock today", default=0)
+    volume = models.IntegerField(verbose_name="交易量", default=0)
+    amount = models.FloatField(verbose_name="交易额", default=0)
 
     class Meta:
         ordering = ['symbol']
@@ -45,24 +45,17 @@ class SimStock(models.Model):
         """
         return reverse('market:sim_stock', args=[str(self.id)])
 
-    def get_daily_absolute_url(self):
+    def get_daily_info_url(self):
         return reverse('market:sim_stock_daily', args=[str(self.id)])
 
-    def get_tick_absolute_url(self):
+    def get_tick_info_url(self):
         return reverse('market:sim_stock_tick', args=[str(self.id)])
 
-    def get_prev_tick_absolute_url(self):
+    def get_prev_tick_info_url(self):
         return reverse('market:sim_stock_prev_tick', args=[str(self.id)])
 
-    def get_next_tick_absolute_url(self):
+    def get_next_tick_info_url(self):
         return reverse('market:sim_stock_next_tick', args=[str(self.id)])
-
-    def initialize_order_book(self):
-        """
-        初始化stock的order book
-        """
-        order_book, ok = SimOrderBook.objects.get_or_create(stock=self)
-        return order_book
 
     def trading_behaviour(self, direction, price, vol, datetime, tick):
         """
@@ -77,25 +70,45 @@ class SimStock(models.Model):
         self.amount += float(price * vol)
         self.save()
 
-        SimTradeHistory.objects.create(stock=self, direction=direction, price=price, vol=vol, datetime=datetime, tick=tick)
+        # 记录交易历史
+        # SimTradeHistory.objects.create(stock_symbol=self.symbol, direction=direction, price=price, vol=vol, datetime=datetime, tick=tick)
 
     def is_order_book_empty(self, direction):
         """
         判断自己的买或卖的order book是否为空
         """
-        order_book, _ = SimOrderBook.objects.get_or_create(stock=self)
-        entries = SimOrderBookEntry.objects.filter(order_book=order_book, entry_direction=direction)
-        if entries.exists():
-            return True
-        else:
+        if SimOrderBookEntry.objects.filter(stock_symbol=self.symbol, entry_direction=direction).exists():
             return False
+        else:
+            return True
 
-    def get_order_book_info(self):
+    def get_best_element(self, direction):
+        entries = SimOrderBookEntry.objects.filter(stock_symbol=self.symbol, entry_direction=direction)
+        if not entries.exists():
+            return None
+        else:
+            if direction == 'a':
+                # 得到最早的卖一条目
+                best_entry = entries.order_by('entry_price')[0]
+                best_element = SimOrderBookElem.objects.filter(entry_belonged=best_entry.id)[0]
+                return best_element
+            elif direction == 'b':
+                # 得到最早的买一条目
+                best_entry = entries.order_by('-entry_price')[0]
+                best_element = SimOrderBookElem.objects.filter(entry_belonged=best_entry.id)[0]
+                return best_element
+            else:
+                raise NotImplementedError
+
+    def get_order_book_data(self, level=5, to_list=False):
+        """
+        获得指定level的盘口数据，level为-1时获得全部order book数据，默认获取五档数据
+        [(a5, a5_v ... a1, a1_v)], [(b1, b1_v ... b5, b5_v)]
+        """
         ask_info = []
         bid_info = []
-        order_book, _ = SimOrderBook.objects.get_or_create(stock=self)
-        order_book_entries = SimOrderBookEntry.objects.filter(order_book=order_book).order_by('entry_price')
-        if order_book_entries is not None:
+        order_book_entries = SimOrderBookEntry.objects.filter(stock_symbol=self.symbol).order_by('-entry_price')
+        if order_book_entries.exists():
             for entry in order_book_entries:
                 if entry.entry_direction == 'a':
                     ask_info.append((entry.entry_price, entry.total_vol))
@@ -103,80 +116,84 @@ class SimStock(models.Model):
                     bid_info.append((entry.entry_price, entry.total_vol))
                 else:
                     raise ValueError('Invalid direction in order book entries!')
-
-        return ask_info, bid_info
-
-    def get_level1_data(self):
-        order_book = SimOrderBook.objects.get(stock=self)
-        best_ask = SimOrderBookEntry.objects.filter(order_book=order_book, entry_direction='a').order_by(
-            'entry_price')[0]
-        best_bid = SimOrderBookEntry.objects.filter(order_book=order_book, entry_direction='b').order_by(
-            '-entry_price')[0]
-        return best_ask.entry_price, best_ask.total_vol, best_bid.entry_price, best_bid.total_vol
-
-    def get_level5_data(self):
-        ask_info = []
-        bid_info = []
-        order_book, _ = SimOrderBook.objects.get_or_create(stock=self)
-        ask_entries = SimOrderBookEntry.objects.filter(order_book=order_book, entry_direction='a').order_by('entry_price')
-        if ask_entries is not None:
-            for entry in ask_entries:
-                ask_info.append((entry.entry_price, entry.total_vol))
-                if len(ask_info) >= 5:
-                    break
-        while len(ask_info) < 5:
+        while len(ask_info) < level:
             ask_info.insert(0, (None, None))
-
-        bid_entries = SimOrderBookEntry.objects.filter(order_book=order_book, entry_direction='b').order_by('-entry_price')
-        if bid_entries is not None:
-            for entry in bid_entries:
-                bid_info.append((entry.entry_price, entry.total_vol))
-                if len(bid_info) >= 5:
-                    break
-        while len(bid_info) < 5:
+        while len(bid_info) < level:
             bid_info.append((None, None))
 
-        return ask_info, bid_info
+        if not to_list:
+            if level == -1:
+                return ask_info, bid_info
+            else:
+                return ask_info[-level:], bid_info[:level]
+        else:
+            result_list = []
+            ask, bid = ask_info[-level:], bid_info[:level]
+            for info in ask:
+                if info[0]is not None:
+                    result_list.append(info[0])
+                    result_list.append(info[1])
+                else:
+                    result_list.append(0)
+                    result_list.append(0)
 
-    def get_datetime_bound(self):
+            for info in bid:
+                if info[0]is not None:
+                    result_list.append(info[0])
+                    result_list.append(info[1])
+                else:
+                    result_list.append(0)
+                    result_list.append(0)
+            return result_list
+
+    def get_level5_volume(self):
+        level5_data = self.get_order_book_data(level=5, to_list=True)
+        volume = 0
+        for i in range(len(level5_data)):
+            if i % 2 == 0:
+                continue
+            volume += level5_data[i]
+        return volume
+
+    def get_data_imported_datetime_range(self):
         """
         在模拟时得到导入的数据的起止日期
         """
-        slices = SimStockSlice.objects.filter(stock=self).order_by('datetime')
-        r_slices = slices.reverse()
-        return str(slices[0].datetime) + '  --  ' + str(r_slices[0].datetime)
+        slices = SimStockSlice.objects.filter(stock_symbol=self.symbol).order_by('datetime')
+        num_slices = slices.count()
+        return str(slices[0].datetime) + '  --  ' + str(slices[num_slices - 1].datetime)
 
     def get_slices(self):
-        slices = SimStockSlice.objects.filter(stock=self).order_by('datetime')
+        """
+        在模拟时得到导入的数据
+        """
+        slices = SimStockSlice.objects.filter(stock_symbol=self.symbol).order_by('datetime')
         return slices
 
     def reset(self):
-        order_book, _ = SimOrderBook.objects.get_or_create(stock=self)
-        order_book_entries = SimOrderBookEntry.objects.filter(order_book=order_book)
-        for entry in order_book_entries:
-            entry.simorderbookelem_set.all().delete()
-            entry.delete()
+        entries = SimOrderBookEntry.objects.filter(stock_symbol=self.symbol)
+        for entry in entries:
+            SimOrderBookElem.objects.filter(entry_belonged=entry.id).delete()
+        entries.delete()
+        SimTradeHistory.objects.filter(stock_symbol=self.symbol).delete()
         self.amount = 0
         self.volume = 0
-        self.last_price = 0
-        self.high = 0
-        self.low = 0
-        self.limit_up = 0
-        self.limit_down = 0
+        self.last_price = None
+        self.high = None
+        self.low = None
+        self.limit_up = None
+        self.limit_down = None
         self.save()
         return True
 
     def quit(self):
-        time0 = time.time()
-        order_book, _ = SimOrderBook.objects.get_or_create(stock=self)
-        order_book_entries = SimOrderBookEntry.objects.filter(order_book=order_book)
-        for entry in order_book_entries:
-            entry.simorderbookelem_set.all().delete()
-            entry.delete()
-        order_book.delete()
-        time1 = time.time()
-        self.simstockslice_set.all().delete()
-        print('stock:{} id:{} quit, cost {}s.'.format(self.symbol, self.id, time1 - time0))
+        entries = SimOrderBookEntry.objects.filter(stock_symbol=self.symbol)
+        for entry in entries:
+            SimOrderBookElem.objects.filter(entry_belonged=entry.id).delete()
+        entries.delete()
+        SimTradeHistory.objects.filter(stock_symbol=self.symbol).delete()
+        SimStockSlice.objects.filter(stock_symbol=self.symbol).delete()
+        SimStockDailyInfo.objects.filter(stock_symbol=self.symbol).delete()
         self.delete()
         return True
 
@@ -185,17 +202,13 @@ class SimStockSlice(models.Model):
     """
     股市模拟过程中的股票一个切片信息
     """
-    stock = models.ForeignKey(SimStock, on_delete=models.CASCADE)
-    datetime = models.DateTimeField(blank=False)
+    stock_symbol = models.CharField(max_length=12)
+    datetime = models.DateTimeField()
 
-    last_price = models.DecimalField(max_digits=MAX_DIGITS, decimal_places=DECIMAL_PLACES, verbose_name="当前价",
-                                     null=True, blank=True, help_text="last price of the stock", default=0)
-    low = models.DecimalField(max_digits=MAX_DIGITS, decimal_places=DECIMAL_PLACES, verbose_name="最低价",
-                              null=True, blank=True, help_text="lowest price of the stock till now today", default=0)
-    high = models.DecimalField(max_digits=MAX_DIGITS, decimal_places=DECIMAL_PLACES, verbose_name="最高价",
-                               null=True, blank=True, help_text="highest price of the stock till now today", default=0)
-    open = models.DecimalField(max_digits=MAX_DIGITS, decimal_places=DECIMAL_PLACES, verbose_name="开盘价",
-                               null=True, blank=True, default=0)
+    last_price = models.DecimalField(max_digits=MAX_DIGITS, decimal_places=DECIMAL_PLACES, verbose_name="当前价", default=0)
+    low = models.DecimalField(max_digits=MAX_DIGITS, decimal_places=DECIMAL_PLACES, verbose_name="最低价", default=0)
+    high = models.DecimalField(max_digits=MAX_DIGITS, decimal_places=DECIMAL_PLACES, verbose_name="最高价", default=0)
+    open = models.DecimalField(max_digits=MAX_DIGITS, decimal_places=DECIMAL_PLACES, verbose_name="开盘价", default=0)
 
     a1 = models.DecimalField(max_digits=MAX_DIGITS, decimal_places=DECIMAL_PLACES, default=0)
     a2 = models.DecimalField(max_digits=MAX_DIGITS, decimal_places=DECIMAL_PLACES, default=0)
@@ -218,103 +231,74 @@ class SimStockSlice(models.Model):
     b4_v = models.IntegerField(default=0)
     b5_v = models.IntegerField(default=0)
 
-    volume = models.IntegerField(verbose_name="交易量", null=True, blank=True, default=0)
-    amount = models.FloatField(verbose_name="交易额", null=True, blank=True, default=0)
+    volume = models.IntegerField(verbose_name="交易量", default=0)
+    amount = models.FloatField(verbose_name="交易额", default=0)
+
+    class Meta:
+        ordering = ['stock_symbol', 'datetime']
 
     def __str__(self):
-        return self.stock.symbol + str(self.datetime)
+        return self.stock_symbol + str(self.datetime)
 
-    def get_level5_data(self):
-        ask_info = [(self.a5, self.a5_v), (self.a4, self.a4_v), (self.a3, self.a3_v), (self.a2, self.a2_v), (self.a1, self.a1_v)]
-        bid_info = [(self.b1, self.b1_v), (self.b2, self.b2_v), (self.b3, self.b3_v), (self.b4, self.b4_v), (self.b5, self.b5_v)]
-        return ask_info, bid_info
+    def get_level5_data(self, to_list=False):
+        if not to_list:
+            ask_info = [(self.a5, self.a5_v), (self.a4, self.a4_v), (self.a3, self.a3_v), (self.a2, self.a2_v),
+                        (self.a1, self.a1_v)]
+            bid_info = [(self.b1, self.b1_v), (self.b2, self.b2_v), (self.b3, self.b3_v), (self.b4, self.b4_v),
+                        (self.b5, self.b5_v)]
+            return ask_info, bid_info
+        else:
+            return [self.a5, self.a5_v, self.a4, self.a4_v, self.a3, self.a3_v, self.a2, self.a2_v, self.a1, self.a1_v,
+                    self.b1, self.b1_v, self.b2, self.b2_v, self.b3, self.b3_v, self.b4, self.b4_v, self.b5, self.b5_v]
+
+    def get_level5_volume(self):
+        return (self.a5_v + self.a4_v + self.a3_v + self.a2_v + self.a1_v,
+                self.b1_v + self.b2_v + self.b3_v + self.b4_v + self.b5_v)
 
 
 class SimStockDailyInfo(models.Model):
     """
     股市模拟过程中的股票日级别信息
     """
-    stock = models.ForeignKey(SimStock, on_delete=models.CASCADE)
-    date = models.DateField(blank=False)
+    stock_symbol = models.CharField(max_length=12)
+    date = models.DateField()
 
-    low = models.DecimalField(max_digits=MAX_DIGITS, decimal_places=DECIMAL_PLACES, verbose_name="最低价",
-                              null=True, blank=True, help_text="lowest price of the stock till now today", default=0)
-    high = models.DecimalField(max_digits=MAX_DIGITS, decimal_places=DECIMAL_PLACES, verbose_name="最高价",
-                               null=True, blank=True, help_text="highest price of the stock till now today", default=0)
-    open = models.DecimalField(max_digits=MAX_DIGITS, decimal_places=DECIMAL_PLACES, verbose_name="开盘价",
-                               null=True, blank=True, default=0)
-    close = models.DecimalField(max_digits=MAX_DIGITS, decimal_places=DECIMAL_PLACES, verbose_name="收盘价",
-                                null=True, blank=True, default=0)
+    low = models.DecimalField(max_digits=MAX_DIGITS, decimal_places=DECIMAL_PLACES, verbose_name="最低价", default=0)
+    high = models.DecimalField(max_digits=MAX_DIGITS, decimal_places=DECIMAL_PLACES, verbose_name="最高价", default=0)
+    open = models.DecimalField(max_digits=MAX_DIGITS, decimal_places=DECIMAL_PLACES, verbose_name="开盘价", default=0)
+    close = models.DecimalField(max_digits=MAX_DIGITS, decimal_places=DECIMAL_PLACES, verbose_name="收盘价", default=0)
 
-    volume = models.IntegerField(verbose_name="交易量", null=True, blank=True, default=0)
-    amount = models.FloatField(verbose_name="交易额", null=True, blank=True, default=0)
+    volume = models.IntegerField(verbose_name="交易量", default=0)
+    amount = models.FloatField(verbose_name="交易额", default=0)
 
     def __str__(self):
-        return self.stock.symbol + str(self.date)
-
-
-class SimOrderBook(models.Model):
-    """
-    order book of a stock
-    """
-    stock = models.ForeignKey(SimStock, on_delete=models.CASCADE)
-
-    class Meta:
-        ordering = ['stock']
-
-    def __str__(self):
-        return self.stock.symbol + '(' + self.stock.name + ')'
-
-    def is_empty(self, direction):
-        entries = SimOrderBookEntry.objects.filter(order_book=self, entry_direction=direction)
-        if entries.exists():
-            return False
-        else:
-            return True
-
-    def get_best_element(self, direction):
-        if self.is_empty(direction):
-            return None
-        else:
-            if direction == 'a':
-                # 得到最早的卖一条目
-                best_entry = self.simorderbookentry_set.filter(entry_direction=direction).select_related().order_by('entry_price')[0]
-                best_element = best_entry.simorderbookelem_set.all().order_by('-date_committed')[0]
-                return best_element
-            elif direction == 'b':
-                # 得到最早的买一条目
-                best_entry = self.simorderbookentry_set.filter(entry_direction=direction).order_by('-entry_price')[0]
-                best_element = best_entry.simorderbookelem_set.all().order_by('-date_committed')[0]
-                return best_element
-            else:
-                raise NotImplementedError
+        return self.stock_symbol + str(self.date)
 
 
 class SimOrderBookEntry(models.Model):
     """
     Order Book Entry, i.e. an entry of a specific price. contains (\d+) elements
     """
-    order_book = models.ForeignKey(SimOrderBook, on_delete=models.CASCADE)
+    stock_symbol = models.CharField(max_length=12)
     entry_direction = models.CharField(max_length=1, default='b')
     entry_price = models.DecimalField(max_digits=MAX_DIGITS, decimal_places=DECIMAL_PLACES, verbose_name='价格')
     total_vol = models.IntegerField(default=0)
 
     class Meta:
-        ordering = ['order_book', 'entry_direction', 'entry_price']
+        ordering = ['stock_symbol', 'entry_direction', 'entry_price']
 
     def __str__(self):
-        return self.order_book.__str__() + str(self.entry_price) + str(self.entry_direction)
+        return self.stock_symbol + '-(' + str(self.entry_price) + ',' + str(self.entry_direction) + ')'
 
 
 class SimOrderBookElem(models.Model):
     """
     Order Book Entry
     """
-    order_book_entry = models.ForeignKey(SimOrderBookEntry, on_delete=models.CASCADE)
-
-    unique_id = models.UUIDField(blank=False, default=uuid.uuid4)
-    client = models.ForeignKey('market.BaseClient', on_delete=models.CASCADE)
-    date_committed = models.DateTimeField(blank=False)
+    entry_belonged = models.IntegerField()  # 所属的order book条目
+    unique_id = models.UUIDField(blank=False, default=uuid.uuid4)  # 用于和委托一一对应
+    client = models.IntegerField()  # 挂单的client的id
+    date_committed = models.DateTimeField()  # 委托提交被挂起的时间
     OPERATION_DIRECTION = (
         ('a', 'ASK'),
         ('b', 'BID'),
@@ -324,17 +308,17 @@ class SimOrderBookElem(models.Model):
     vol_committed = models.IntegerField(verbose_name='数量')
 
     class Meta:
-        ordering = ['order_book_entry', 'date_committed']
+        ordering = ['entry_belonged', 'date_committed']
 
     def __str__(self):
-        return self.client.name
+        return str(self.client) + '-(' + str(self.price_committed) + ',' + str(self.vol_committed) + ')'
 
 
 class SimTradeHistory(models.Model):
     """
     记录股票的模拟交易历史
     """
-    stock = models.ForeignKey(SimStock, on_delete=models.CASCADE)
+    stock_symbol = models.CharField(max_length=12)
     TRADE_DIRECTION = (
         ('a', 'ASK'),
         ('b', 'BID'),
@@ -346,8 +330,8 @@ class SimTradeHistory(models.Model):
     tick = models.IntegerField(blank=False)
 
     class Meta:
-        ordering = ['stock', 'tick', 'id']
+        ordering = ['stock_symbol', 'tick', 'id']
 
     def __str__(self):
-        return self.stock.symbol + '(' + self.stock.name + ')' + str(self.direction) + str(self.price) + str(self.id)
+        return self.stock_symbol + str(self.direction) + '-(' + str(self.price) + ',' + str(self.vol) + ')'
 

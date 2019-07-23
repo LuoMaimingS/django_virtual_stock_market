@@ -1,8 +1,12 @@
-from django.db import models
-from django.urls import reverse
-import uuid
+# _*_ coding:UTF-8 _*_
 
-from .clients import BaseClient
+"""
+该文件定义了模拟环境中client相关的模型，包括持仓，委托，交易等，
+并非虚拟股市原本的模型，做了一些适应性的调整，取消了全部外键。
+"""
+
+from django.db import models
+import uuid
 from .config import *
 
 
@@ -10,12 +14,8 @@ class SimHoldingElem(models.Model):
     """
     Client的持仓信息
     """
-    owner = models.ForeignKey(BaseClient, on_delete=models.CASCADE)
-
-    # stock corresponding
-    stock_corr = models.ForeignKey('market.SimStock', on_delete=models.CASCADE)
-    stock_symbol = models.CharField(max_length=12)
-    stock_name = models.CharField(max_length=20)
+    owner = models.IntegerField()  # 持有者的ID
+    stock_symbol = models.CharField(max_length=12)  # 股票代码
 
     # volume info
     vol = models.IntegerField(verbose_name='股票总数量', default=0)
@@ -33,41 +33,25 @@ class SimHoldingElem(models.Model):
     value = models.FloatField(verbose_name='市值', default=0)
 
     # date info
-    date_bought = models.DateTimeField(blank=True, null=True)
+    date_bought = models.DateTimeField()
 
     class Meta:
-        ordering = ['owner', '-date_bought']
+        ordering = ['owner', '-date_bought', 'id']
 
     def __str__(self):
-        return self.stock_symbol + '(' + self.stock_name + ')' + str(self.vol)
-
-    def refresh(self):
-        self.last_price = self.stock_corr.last_price
-        self.profit = (self.last_price - self.cost) * self.vol
-        self.value = self.last_price * self.vol
-        self.save()
-
-    def get_stock_url(self):
-        """
-        Returns the url to the stock.
-        """
-        return reverse('market:sim_stock', args=[str(self.stock_corr.id)])
+        return self.stock_symbol + '-' + str(self.vol) + 'shares'
 
 
 class SimCommissionElem(models.Model):
     """
     Client的委托信息
     """
-    owner = models.ForeignKey(BaseClient, on_delete=models.CASCADE, null=False)
-    unique_id = models.UUIDField(blank=False, editable=False)
+    owner = models.IntegerField()  # 委托者的ID
+    stock_symbol = models.CharField(max_length=12)  # 股票代码
+    unique_id = models.UUIDField(blank=False, default=uuid.uuid4)
 
     # date info
-    date_committed = models.DateTimeField(blank=False)
-
-    # stock corresponding
-    stock_corr = models.ForeignKey('market.SimStock', on_delete=models.CASCADE)
-    stock_symbol = models.CharField(max_length=12)
-    stock_name = models.CharField(max_length=20)
+    date_committed = models.DateTimeField()
 
     # commission info
     CLIENT_OPERATION = (
@@ -86,36 +70,24 @@ class SimCommissionElem(models.Model):
         ordering = ['owner', '-date_committed']
 
     def __str__(self):
-        return self.stock_symbol + '(' + self.stock_name + ')'
-
-    def get_stock_url(self):
-        """
-        Returns the url to the stock.
-        """
-        return reverse('market:sim_stock', args=[str(self.stock_corr.id)])
+        return self.stock_symbol + '-' + self.operation + '-' + str(self.vol_committed) + 'shares'
 
 
 class SimTransactionElem(models.Model):
     """
     Client的成交信息
     """
-    one_side = models.IntegerField(help_text='交易一方的ID')
-    the_other_side = models.IntegerField(help_text='交易另一方的ID')
-    unique_id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    one_side = models.IntegerField(verbose_name='交易一方的ID')
+    the_other_side = models.IntegerField(verbose_name='交易另一方的ID')
+    stock_symbol = models.CharField(max_length=12, verbose_name='股票代码')
 
-    # stock corresponding
-    stock_corr = models.ForeignKey('market.SimStock', on_delete=models.CASCADE)
-    stock_symbol = models.CharField(max_length=12)
-    stock_name = models.CharField(max_length=20)
-
-    # commission info
+    # transaction info
     CLIENT_OPERATION = (
         ('a', 'ASK'),
         ('b', 'BID'),
         ('c', 'CANCEL')
     )
-    operation = models.CharField(max_length=1, choices=CLIENT_OPERATION, blank=False, default='b',
-                                 help_text='operation')
+    operation = models.CharField(max_length=1, choices=CLIENT_OPERATION, blank=False, default='b', verbose_name='交易一方的成交方向')
 
     # trade info
     price_traded = models.DecimalField(max_digits=MAX_DIGITS, decimal_places=DECIMAL_PLACES, verbose_name='成交价格',
@@ -127,10 +99,4 @@ class SimTransactionElem(models.Model):
         ordering = ['one_side', '-date_traded']
 
     def __str__(self):
-        return self.stock_symbol + '(' + self.stock_name + ')'
-
-    def get_stock_url(self):
-        """
-        Returns the url to the stock.
-        """
-        return reverse('market:sim_stock', args=[str(self.stock_corr.id)])
+        return str(self.one_side) + self.operation + '-' + self.stock_symbol + '-' + str(self.vol_traded) + 'shares'

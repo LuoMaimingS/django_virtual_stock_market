@@ -5,9 +5,9 @@
     {{ stock.symbol }}({{ time }})(模拟环境)
     <a class="btn btn-info btn-lg" href="{{ stock.get_absolute_url }}" role="button">当日数据</a>
     
-    <a class="btn btn-info btn-lg" href="{{ stock.get_daily_absolute_url }}" role="button">历史数据</a>
+    <a class="btn btn-info btn-lg" href="{{ stock.get_daily_info_url }}" role="button">历史数据</a>
 
-    <a class="btn btn-info btn-lg" href="{{ stock.get_tick_absolute_url }}" role="button">tick截面</a>
+    <a class="btn btn-info btn-lg" href="{{ stock.get_tick_info_url }}" role="button">tick截面</a>
   </h1>
 {% endblock header %}
 

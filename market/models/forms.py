@@ -41,9 +41,29 @@ class ImportStockDataForm(forms.Form):
     stock_symbol = forms.CharField(max_length=12, label='股票代码')
     start_date = forms.SplitDateTimeField(label='起始时间', initial=INITIAL_DATETIME)
     end_date = forms.SplitDateTimeField(label='截止时间', initial=END_DATETIME)
-    # interval = forms.IntegerField(label='时间间隔（秒）', initial=60, help_text='需要是3的倍数')
+    INTERVAL = (
+        ('t', 'tick'),
+        ('m', 'minute'),
+    )
+    interval = forms.ChoiceField(choices=INTERVAL, label='数据级别')
 
 
 class AnchorForm(forms.Form):
     anchor_datetime = forms.SplitDateTimeField(label='起始时间', initial=INITIAL_DATETIME)
 
+
+class GenerateDataForm(forms.Form):
+    stock_symbol = forms.CharField(max_length=12, label='股票代码', initial='000009.XSHE')
+    traj_length = forms.IntegerField(label='轨迹长度', initial=64)
+    traj_num = forms.IntegerField(label='轨迹数目', initial=-1)
+    track_length = forms.IntegerField(label='TICK追踪长度', initial=64)
+
+
+class GailTrainForm(forms.Form):
+    stock_symbol = forms.CharField(max_length=12, label='股票代码', initial='000009.XSHE')
+    seed = forms.IntegerField(label='随机种子', initial=0)
+    task = forms.ChoiceField(choices=(('train', 'train'), ('evaluate', 'evaluate'), ('sample', 'sample')),
+                             label='训练任务', initial='train')
+    algo = forms.ChoiceField(choices=(('trpo', 'trpo'), ('ppo', 'ppo')), label='算法使用', initial='trpo')
+    g_step = forms.IntegerField(initial=3, label='G的步数')
+    d_step = forms.IntegerField(initial=1, label='D的步数')

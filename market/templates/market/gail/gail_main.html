@@ -1,0 +1,15 @@
+{% extends "market/base.html" %}
+
+{% block header %}
+  <div class="jumbotron">
+    <h1>{{user.username}}</h1>
+    <p>进入GAIL训练任务，当前的虚拟时间是：<strong>{{datetime}} </strong></p>
+    <p><a class="btn btn-primary btn-lg" href="{% url 'market:gail_train' %}" role="button">开始运行</a>
+    &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+    <a class="btn btn-success btn-lg" href="{% url 'market:gail_gen_expert_data' %}" role="button">专家数据</a>
+  </div>
+{% endblock header %}
+
+{% block content %}
+
+{% endblock content %}

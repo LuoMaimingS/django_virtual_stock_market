@@ -69,5 +69,14 @@ urlpatterns = [
     path('simulator/import_data', views.simulator_import_stock_data, name='sim_import'),
 
     # 切入股市历史截面
-    path('simulator/anchor_in_time_point', views.anchor_in_time_point, name='sim_anchor')
+    path('simulator/anchor_in_time_point', views.anchor_in_time_point, name='sim_anchor'),
+
+    # gail主页面
+    path('gail/main', views.gail_main, name='gail_main'),
+
+    # 生成gail专家数据页面
+    path('gail/generate_expert_data', views.gail_generate_expert_data, name='gail_gen_expert_data'),
+
+    # gail训练页面
+    path('gail/train', views.gail_train, name='gail_train')
 ]

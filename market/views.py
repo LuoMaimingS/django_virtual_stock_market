@@ -13,8 +13,8 @@ import json
 from .models import clients, stocks, forms, sim_market, sim_clients, sim_stocks
 from .models import config, utils
 from .models.trades import CommissionMsg, commission_handler
-from .models.sim_trades import SimCommissionMsg, sim_commission_handler
-from .simulator_main import simulator_main_func
+from .simulator_main import simulator_main_func, anchor_one_stock
+from .baselines.baselines.gail.dataset.generate_expert_data import generate_expert_data
 
 
 def index(request):
@@ -171,6 +171,10 @@ def cancel_view(request):
     return render(request, 'market/user_cancel.html', context)
 
 
+# 下面的视图用于股市模拟，需要超级用户权限
+# 使用虚拟的client，基于真实的股票数据进行模拟
+
+
 @login_required
 def simulator_welcome(request):
     """
@@ -184,10 +188,10 @@ def simulator_welcome(request):
     num_v_clients = clients.BaseClient.objects.filter(driver=None).count()
     num_stocks = sim_stocks.SimStock.objects.count()
     market, _ = sim_market.SimMarket.objects.get_or_create(id=1)
-    datetime = market.datetime
+    cur_datetime = str(market.datetime)
     tick = market.tick
     context = {'num_clients': num_clients, 'num_stocks': num_stocks, 'num_v_clients': num_v_clients,
-               'datetime': datetime, 'tick': tick}
+               'datetime': cur_datetime, 'tick': tick}
     return render(request, 'market/simulator/simulator_welcome.html', context)
 
 
@@ -213,12 +217,13 @@ def simulator_stock_detail(request, stock_id):
     if not request.user.is_superuser:
         return render(request, 'market/invalid/no_permission.html')
     this_stock = sim_stocks.SimStock.objects.get(id=stock_id)
-    ask_info, bid_info = this_stock.get_level5_data()
+    ask_info, bid_info = this_stock.get_order_book_data(level=5)
 
     market = sim_market.SimMarket.objects.get(id=1)
     cur_datetime = market.datetime
-    cur_day = sim_market.SimMarket.objects.get(id=1).datetime.day
-    stock_slices = sim_stocks.SimStockSlice.objects.filter(stock=this_stock, datetime__day=cur_day, datetime__lte=cur_datetime)
+    cur_day = cur_datetime.day
+    stock_slices = sim_stocks.SimStockSlice.objects.filter(stock_symbol=this_stock.symbol,
+                                                           datetime__day=cur_day, datetime__lte=cur_datetime)
     time_log = []
     price_log = []
     volume_log = []
@@ -228,7 +233,7 @@ def simulator_stock_detail(request, stock_id):
         volume_log.append(each_slice.volume)
 
     # 读取生成数据
-    generate_trades = sim_stocks.SimTradeHistory.objects.filter(stock=this_stock).order_by('tick','id').reverse()
+    generate_trades = sim_stocks.SimTradeHistory.objects.filter(stock_symbol=this_stock.symbol).order_by('tick','id').reverse()
     prev_tick = None
     price_generated = []
     for trade in generate_trades:
@@ -240,7 +245,7 @@ def simulator_stock_detail(request, stock_id):
     price_generated.reverse()
     tick = list(range(len(price_generated) + 1))
     tick.remove(0)
-    context = {'stock': this_stock, 'level5_ask': ask_info, 'level5_bid': bid_info, 'time': cur_datetime,
+    context = {'stock': this_stock, 'level5_ask': ask_info, 'level5_bid': bid_info, 'time': str(cur_datetime),
                'time_log': json.dumps(time_log), 'price_log': json.dumps(price_log), 'volume_log': json.dumps(volume_log),
                'tick': json.dumps(tick), 'price_generated': json.dumps(price_generated)}
     return render(request, 'market/simulator/v_stock.html', context)
@@ -258,14 +263,14 @@ def simulator_stock_daily(request, stock_id):
     cur_datetime = market.datetime
     cur_date = cur_datetime.date()
 
-    stock_daily_info = sim_stocks.SimStockDailyInfo.objects.filter(stock=this_stock, date__lt=cur_date)
+    stock_daily_info = sim_stocks.SimStockDailyInfo.objects.filter(stock_symbol=this_stock.symbol, date__lt=cur_date)
     candles = []
     volume = []
     for info in stock_daily_info:
         candles.append([str(info.date), float(info.open), float(info.high), float(info.low), float(info.close)])
         volume.append([str(info.date), info.volume])
 
-    context = {'stock': this_stock, 'time': cur_datetime,
+    context = {'stock': this_stock, 'time': str(cur_datetime),
                'candles': json.dumps(candles), 'volume': json.dumps(volume)}
     return render(request, 'market/simulator/v_stock_daily.html', context)
 
@@ -278,9 +283,14 @@ def simulator_stock_tick(request, stock_id):
     if not request.user.is_superuser:
         return render(request, 'market/invalid/no_permission.html')
     this_stock = sim_stocks.SimStock.objects.get(id=stock_id)
-    market = sim_market.SimMarket.objects.get(id=1)
+    market, created = sim_market.SimMarket.objects.get_or_create(id=2)  # 用于浏览截面
+    if created:
+        origin_market = sim_market.SimMarket.objects.get(id=1)
+        market.anchored_datetime = origin_market.anchored_datetime
+        market.datetime = origin_market.anchored_datetime
+        market.save()
     cur_datetime = market.datetime
-    stock_tick_info = sim_stocks.SimStockSlice.objects.filter(stock=this_stock, datetime=cur_datetime)
+    stock_tick_info = sim_stocks.SimStockSlice.objects.filter(stock_symbol=this_stock.symbol, datetime=cur_datetime)
     ask_info = None
     bid_info = None
     tick_info = None
@@ -295,15 +305,14 @@ def simulator_stock_tick(request, stock_id):
 @login_required
 def simulator_stock_prev_tick(request, stock_id):
     """
-    显示股票市场中某支股票的tick截面信息
+    显示股票市场中某支股票上一个的tick截面信息
     """
     if not request.user.is_superuser:
         return render(request, 'market/invalid/no_permission.html')
-    print('prev')
     this_stock = sim_stocks.SimStock.objects.get(id=stock_id)
-    market = sim_market.SimMarket.objects.get(id=1)
+    market = sim_market.SimMarket.objects.get(id=2)
     cur_datetime = market.datetime
-    stock_tick_info = sim_stocks.SimStockSlice.objects.get(stock=this_stock, datetime=cur_datetime)
+    stock_tick_info = sim_stocks.SimStockSlice.objects.get(stock_symbol=this_stock.symbol, datetime=cur_datetime)
     prev_info = sim_stocks.SimStockSlice.objects.filter(id=stock_tick_info.id - 1)
     ask_info = None
     bid_info = None
@@ -327,9 +336,9 @@ def simulator_stock_next_tick(request, stock_id):
     if not request.user.is_superuser:
         return render(request, 'market/invalid/no_permission.html')
     this_stock = sim_stocks.SimStock.objects.get(id=stock_id)
-    market = sim_market.SimMarket.objects.get(id=1)
+    market = sim_market.SimMarket.objects.get(id=2)
     cur_datetime = market.datetime
-    stock_tick_info = sim_stocks.SimStockSlice.objects.get(stock=this_stock, datetime=cur_datetime)
+    stock_tick_info = sim_stocks.SimStockSlice.objects.get(stock_symbol=this_stock.symbol, datetime=cur_datetime)
     next_info = sim_stocks.SimStockSlice.objects.filter(id=stock_tick_info.id + 1)
     ask_info = None
     bid_info = None
@@ -353,7 +362,7 @@ def simulator_main(request):
     # 只有超级用户才有权限进行模拟
     if not request.user.is_superuser:
         return render(request, 'market/invalid/no_permission.html')
-    result = simulator_main_func()
+    result = simulator_main_func(request.user)
     context = {'result': result}
     return render(request, 'market/simulator/simulator_main.html', context)
 
@@ -380,10 +389,9 @@ def simulator_v_clients(request):
             vol = client_form.cleaned_data['vol']
             market = sim_market.SimMarket.objects.get(id=1)
             if vol != 0:
-                new_holding = sim_clients.SimHoldingElem(owner=new_client, stock_corr=stock_corr,
-                                                         stock_symbol=stock_corr.symbol, stock_name=stock_corr.name,
-                                                         vol=vol, frozen_vol=0, available_vol=vol,
-                                                         date_bought=market.datetime)
+                new_holding = sim_clients.SimHoldingElem(owner=new_client.id, stock_symbol=stock_corr.symbol,
+                                                         stock_name=stock_corr.name, date_bought=market.datetime,
+                                                         vol=vol, frozen_vol=0, available_vol=vol)
                 new_holding.save()
             market.num_v_clients += 1
             market.save()
@@ -408,9 +416,9 @@ def simulator_client_detail(request, client_id):
         return render(request, 'market/invalid/no_permission.html')
 
     this_client = clients.BaseClient.objects.get(id=client_id)
-    holding = sim_clients.SimHoldingElem.objects.filter(owner=this_client).order_by('stock_symbol')
-    commission = sim_clients.SimCommissionElem.objects.filter(owner=this_client).order_by('stock_symbol')
-    transaction = sim_clients.SimTransactionElem.objects.filter(one_side=this_client.id).order_by('stock_symbol')
+    holding = sim_clients.SimHoldingElem.objects.filter(owner=client_id).order_by('stock_symbol')
+    commission = sim_clients.SimCommissionElem.objects.filter(owner=client_id).order_by('stock_symbol')
+    transaction = sim_clients.SimTransactionElem.objects.filter(one_side=client_id).order_by('stock_symbol')
 
     for hold in holding:
         this_client.profit = 0
@@ -429,7 +437,7 @@ def simulator_reset(request):
     if not request.user.is_superuser:
         return render(request, 'market/invalid/no_permission.html')
     superuser_client, _ = clients.BaseClient.objects.get_or_create(driver=request.user)
-    _ = simulator_reset_handler(request, superuser_client)
+    simulator_reset_handler(request, superuser_client)
     return HttpResponseRedirect(reverse('market:sim_welcome'))
 
 
@@ -437,11 +445,12 @@ def simulator_reset_handler(request, superuser_client):
     time0 = time.time()
     assert isinstance(superuser_client, clients.BaseClient)
     market = sim_market.SimMarket.objects.get(id=1)
+    sim_market.SimMarket.objects.filter(id=2).delete()
+    clients.BaseClient.objects.filter(driver=None).delete()
     sim_clients.SimTransactionElem.objects.all().delete()
-    sim_stocks.SimTradeHistory.objects.all().delete()
-    v_clients = clients.BaseClient.objects.filter(driver=None)
-    for v_client in v_clients:
-        v_client.quit()
+    sim_clients.SimHoldingElem.objects.all().delete()
+    sim_clients.SimCommissionElem.objects.all().delete()
+
     market.datetime = market.anchored_datetime
     market.num_v_clients = 0
     market.tick = 0
@@ -449,11 +458,13 @@ def simulator_reset_handler(request, superuser_client):
     v_stocks = sim_stocks.SimStock.objects.all()
     for v_stock in v_stocks:
         v_stock.reset()
-    superuser_client.quit()
-    new_superuser_client = clients.BaseClient.objects.create(driver=request.user, name=request.user.username)
+    superuser_client.cash = 100000000
+    superuser_client.flexible_cash = 100000000
+    superuser_client.frozen_cash = 0
+    superuser_client.save()
     time1 = time.time()
     print('Simulator Reset, Cost {}s'.format(time1 - time0))
-    return new_superuser_client
+    return True
 
 
 @login_required
@@ -463,20 +474,10 @@ def simulator_reset_all(request):
     """
     if not request.user.is_superuser:
         return render(request, 'market/invalid/no_permission.html')
-    market = sim_market.SimMarket.objects.get(id=1)
-    sim_clients.SimTransactionElem.objects.all().delete()
-    v_clients = clients.BaseClient.objects.filter(driver=None)
-    for v_client in v_clients:
-        v_client.quit()
-        market.num_v_clients -= 1
-    market.datetime = sim_market.INITIAL_DATETIME
-    market.anchored_datetime = sim_market.INITIAL_DATETIME
-    market.num_v_clients = 0
-    market.tick = 0
-    market.save()
-    v_stocks = sim_stocks.SimStock.objects.all()
-    for v_stock in v_stocks:
-        v_stock.quit()
+    superuser_client, _ = clients.BaseClient.objects.get_or_create(driver=request.user)
+    simulator_reset_handler(request, superuser_client)
+    sim_stocks.SimStockSlice.objects.all().delete()
+    sim_stocks.SimTradeHistory.objects.all().delete()
     return HttpResponseRedirect(reverse('market:sim_welcome'))
 
 
@@ -493,8 +494,8 @@ def simulator_import_stock_data(request):
             stock = form.cleaned_data['stock_symbol']
             start_date = form.cleaned_data['start_date']
             end_date = form.cleaned_data['end_date']
-            # interval = form.cleaned_data['interval']
-            ok = import_stock_data(stock, start_date, end_date)
+            interval = form.cleaned_data['interval']
+            ok = import_stock_data(stock, start_date, end_date, interval)
             if ok:
                 return HttpResponseRedirect(reverse('market:sim_welcome'))
             else:
@@ -505,7 +506,7 @@ def simulator_import_stock_data(request):
     return render(request, 'market/simulator/import_data.html', context)
 
 
-def import_stock_data(symbol, start_date, end_date):
+def import_stock_data(symbol, start_date, end_date, interval):
     import os
     abs_path = os.path.abspath('utils.py')
     abs_path = abs_path[:-9]
@@ -515,12 +516,13 @@ def import_stock_data(symbol, start_date, end_date):
     num_record = len(data)
     start_datetime = utils.get_int_from_timestamp(start_date)
     end_datetime = utils.get_int_from_timestamp(end_date)
-    stock, _ = sim_stocks.SimStock.objects.get_or_create(symbol=symbol)
     prev_day = str(data.index[0])[6:8]
     prev_imported_time = None
     open_today = 0.0
     time0 = time.time()
     count = 0
+
+    sim_stocks.SimStock.objects.get_or_create(symbol=symbol)
     for i in range(num_record):
         cur_datetime = data.index[i]
         if cur_datetime < start_datetime:
@@ -532,7 +534,7 @@ def import_stock_data(symbol, start_date, end_date):
             # 加入前一天的日间截面信息
             prev_timestamp = utils.get_timestamp_from_int(prev_imported_time)
             prev_record = data.loc[prev_imported_time]
-            sim_stocks.SimStockDailyInfo.objects.create(stock=stock, date=prev_timestamp.date(), open=open_today,
+            sim_stocks.SimStockDailyInfo.objects.create(stock_symbol=symbol, date=prev_timestamp.date(), open=open_today,
                                                         high=prev_record.high, low=prev_record.low,
                                                         close=prev_record['last'],
                                                         volume=prev_record.volume, amount=prev_record.amount)
@@ -542,28 +544,32 @@ def import_stock_data(symbol, start_date, end_date):
             time0 = time.time()
 
         if str(cur_datetime)[9:11] == '91' or str(cur_datetime)[9:11] == '92':
-            # 集合竞价阶段不导入
+            # 集合竞价阶段不导入（开盘）
             prev_imported_time = None
             continue
 
-        # 导入每分钟数据，加入偏移，尽量同步每个整分钟
-        """
-        if (str(prev_imported_time)[12:14] == '03' or str(prev_imported_time)[12:14] == '06') and \
-                str(cur_datetime)[12:14] == '00':
+        if interval == 't':
             pass
-        else:
-            if prev_imported_time is not None and cur_datetime - prev_imported_time < 100000:
-                continue
-        """
+        elif interval == 'm':
+            # 导入每分钟数据，加入偏移，尽量同步每个整分钟
+            if (str(prev_imported_time)[12:14] == '03' or str(prev_imported_time)[12:14] == '06') and \
+                    str(cur_datetime)[12:14] == '00':
+                pass
+            else:
+                if prev_imported_time is not None and cur_datetime - prev_imported_time < 100000:
+                    continue
 
         data_slice = data.loc[cur_datetime]
         if prev_imported_time is None:
             # 开盘价
             open_today = data_slice['last']
         cur_timestamp = utils.get_timestamp_from_int(cur_datetime)
-        if sim_stocks.SimStockSlice.objects.filter(stock=stock, datetime=cur_timestamp).exists():
+
+        if sim_stocks.SimStockSlice.objects.filter(stock_symbol=symbol, datetime=cur_timestamp).exists():
+            # 该股票该截面已经导入
             continue
-        stick = sim_stocks.SimStockSlice(stock=stock, datetime=cur_timestamp, last_price=data_slice['last'],
+
+        stick = sim_stocks.SimStockSlice(stock_symbol=symbol, datetime=cur_timestamp, last_price=data_slice['last'],
                                          high=data_slice.high, low=data_slice.low, open=open_today,
                                          a1=data_slice.a1, a1_v=data_slice.a1_v, b1=data_slice.b1, b1_v=data_slice.b1_v,
                                          a2=data_slice.a2, a2_v=data_slice.a2_v, b2=data_slice.b2, b2_v=data_slice.b2_v,
@@ -573,6 +579,8 @@ def import_stock_data(symbol, start_date, end_date):
                                          amount=data_slice.amount, volume=data_slice.volume)
         stick.save()
         prev_imported_time = cur_datetime
+
+        # 每导入10条记录，打印下时间
         count += 1
         if count == 10:
             print('{} imported.'.format(cur_timestamp))
@@ -588,25 +596,32 @@ def anchor_in_time_point(request):
         form = forms.AnchorForm(request.POST)
         if form.is_valid():
             user_client, _ = clients.BaseClient.objects.get_or_create(driver=request.user)
-            user_client = simulator_reset_handler(request, user_client)
+            simulator_reset_handler(request, user_client)
 
             anchor_datetime = form.cleaned_data['anchor_datetime']
             market, _ = sim_market.SimMarket.objects.get_or_create(id=1)
             market.datetime = anchor_datetime
             market.anchored_datetime = anchor_datetime
             market.save()
+            market_for_tick, _ = sim_market.SimMarket.objects.get_or_create(id=2)
+            market_for_tick.datetime = anchor_datetime
+            market_for_tick.anchored_datetime = anchor_datetime
+            market_for_tick.save()
             v_stocks = sim_stocks.SimStock.objects.all()
             for v_stock in v_stocks:
                 slices = v_stock.get_slices()
                 if not slices.exists():
+                    # 股票的slices信息不存在，跳过
                     continue
                 start = slices[0].datetime
-                end = slices.reverse()[0].datetime
+                end = slices[slices.count() - 1].datetime
                 if anchor_datetime < start or anchor_datetime > end:
+                    # anchor time不在slices记录之中，跳过
                     continue
                 anchor_slice = None
                 for anchor_slice in slices:
                     if anchor_slice.datetime >= anchor_datetime:
+                        # 找到该股票在anchor time之后的第一个tick截面信息
                         break
                 anchor_one_stock(v_stock, anchor_slice, user_client)
             return HttpResponseRedirect(reverse('market:sim_welcome'))
@@ -618,84 +633,67 @@ def anchor_in_time_point(request):
     return render(request, 'market/simulator/anchor_in_time_point.html', context)
 
 
-def anchor_one_stock(stock, anchor, client):
-    assert isinstance(stock, sim_stocks.SimStock)
-    assert isinstance(anchor, sim_stocks.SimStockSlice)
-    assert isinstance(client, clients.BaseClient)
-
-    stock.last_price = anchor.last_price
-    stock.high = anchor.high
-    stock.low = anchor.low
-    stock.limit_up = anchor.open * Decimal(1.1)
-    stock.limit_down = anchor.open * Decimal(0.9)
-    stock.volume = anchor.volume
-    stock.amount = anchor.amount
-    stock.save()
-
-    order_book, _ = sim_stocks.SimOrderBook.objects.get_or_create(stock=stock)
-    if anchor.a1 == 0 and anchor.b1 == 0:
-        return True
-    client.simholdingelem_set.filter(stock_corr=stock).delete()
-
-    if anchor.a1 != 0:
-        superuser_build_position(client, stock, anchor.a1, anchor.a1_v, anchor.datetime)
-    if anchor.a2 != 0:
-        superuser_build_position(client, stock, anchor.a2, anchor.a2_v, anchor.datetime)
-    if anchor.a3 != 0:
-        superuser_build_position(client, stock, anchor.a3, anchor.a3_v, anchor.datetime)
-    if anchor.a4 != 0:
-        superuser_build_position(client, stock, anchor.a4, anchor.a4_v, anchor.datetime)
-    if anchor.a5 != 0:
-        superuser_build_position(client, stock, anchor.a5, anchor.a5_v, anchor.datetime)
-
-    if anchor.b1 != 0:
-        super_user_enter_market(client, stock, anchor.b1, anchor.b1_v, anchor.datetime)
-    if anchor.b2 != 0:
-        super_user_enter_market(client, stock, anchor.b2, anchor.b2_v, anchor.datetime)
-    if anchor.b3 != 0:
-        super_user_enter_market(client, stock, anchor.b3, anchor.b3_v, anchor.datetime)
-    if anchor.b4 != 0:
-        super_user_enter_market(client, stock, anchor.b4, anchor.b4_v, anchor.datetime)
-    if anchor.b5 != 0:
-        super_user_enter_market(client, stock, anchor.b5, anchor.b5_v, anchor.datetime)
-
-    return True
+@login_required
+def gail_main(request):
+    market, _ = sim_market.SimMarket.objects.get_or_create(id=1)
+    cur_datetime = str(market.datetime)
+    context = {'datetime': cur_datetime}
+    return render(request, 'market/gail/gail_main.html', context)
 
 
-def superuser_build_position(user, stock, price, vol, date):
-    assert isinstance(user, clients.BaseClient)
-    assert isinstance(stock, sim_stocks.SimStock)
-    inventory, created = user.simholdingelem_set.get_or_create(stock_corr=stock, date_bought=date)
-    if created:
-        print('{} build positions {}, at price {} vol {} '.format(user.name, stock.symbol, price, vol))
-    if created:
-        inventory.stock_corr = stock
-        inventory.stock_symbol = stock.symbol
-        inventory.vol = vol
-        inventory.available_vol = vol
-        inventory.date_bought = date
+@login_required
+def gail_generate_expert_data(request):
+    """
+    生成专家数据
+    """
+    if not request.user.is_superuser:
+        return render(request, 'market/invalid/no_permission.html')
+    market, _ = sim_market.SimMarket.objects.get_or_create(id=1)
+    cur_datetime = str(market.datetime)
+    if request.method == 'POST':
+        generate_data_form = forms.GenerateDataForm(request.POST)
+        if generate_data_form.is_valid():
+            stock_symbol = generate_data_form.cleaned_data['stock_symbol']
+            traj_length = generate_data_form.cleaned_data['traj_length']
+            traj_num = generate_data_form.cleaned_data['traj_num']
+            track_length = generate_data_form.cleaned_data['track_length']
+            generate_expert_data(stock_symbol, traj_length, track_length, traj_num)
+            return HttpResponseRedirect(reverse('market:gail_main'))
+        else:
+            return render(request, 'market/invalid/invalid_form.html')
+
     else:
-        inventory.vol += vol
-        inventory.available_vol += vol
-    inventory.save()
-    new_commission = SimCommissionMsg.objects.create(stock_symbol=stock.symbol, commit_client=user,
-                                                     commit_direction='a',
-                                                     commit_price=price, commit_vol=vol, commit_date=date)
-    ok = sim_commission_handler(new_commission)
-    return ok
+        generate_data_form = forms.GenerateDataForm()
+
+    context = {'datetime': cur_datetime, 'generate_data_form': generate_data_form}
+    return render(request, 'market/gail/generate_expert_data.html', context)
 
 
-def super_user_enter_market(user, stock, price, vol, date):
-    assert isinstance(user, clients.BaseClient)
-    assert isinstance(stock, sim_stocks.SimStock)
-    user.cash += float(price * vol)
-    user.flexible_cash += float(price * vol)
-    user.save()
-    new_commission = SimCommissionMsg.objects.create(stock_symbol=stock.symbol, commit_client=user,
-                                                     commit_direction='b',
-                                                     commit_price=price, commit_vol=vol, commit_date=date)
-    ok = sim_commission_handler(new_commission)
-    return ok
+@login_required
+def gail_train(request):
+    if request.method == 'POST':
+        gail_train_form = forms.GailTrainForm(request.POST)
+        if gail_train_form.is_valid():
+            stock_symbol = gail_train_form.cleaned_data['stock_symbol']
+            seed = gail_train_form.cleaned_data['seed']
+            task = gail_train_form.cleaned_data['task']
+            algo = gail_train_form.cleaned_data['algo']
+            g_step = gail_train_form.cleaned_data['g_step']
+            d_step = gail_train_form.cleaned_data['d_step']
+            from market.baselines.baselines.gail.run_mujoco import GailArgs, main
+            args = GailArgs()
+            args.set_args(seed=seed, task=task, algo=algo, g_step=g_step, d_step=d_step)
+            main(args)
+            return HttpResponseRedirect(reverse('market:gail_main'))
+        else:
+            return render(request, 'market/invalid/invalid_form.html')
+
+    else:
+        gail_train_form = forms.GailTrainForm()
+
+    context = {'gail_train_form': gail_train_form}
+    return render(request, 'market/gail/gail_train.html', context)
+
 
 
 

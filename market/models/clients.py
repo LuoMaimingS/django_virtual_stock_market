@@ -59,23 +59,6 @@ class BaseClient(models.Model):
         self.save()
         return True
 
-    def quit(self):
-        """
-        client推出市场时，删除全部的有关数据（除了交易历史），目前可能导致交易历史指向链接不可得的bug
-        """
-        time0 = time.time()
-        self.holdingelem_set.all().delete()
-        self.simholdingelem_set.all().delete()
-        self.commissionelem_set.all().delete()
-        self.simcommissionelem_set.all().delete()
-        self.focuselem_set.all().delete()
-        self.orderbookelem_set.all().delete()
-        self.simorderbookelem_set.all().delete()
-        time1 = time.time()
-        # print('client:{} id:{} quits, cost {}s.'.format(self.name, self.id, time1 - time0))
-        self.delete()
-        return True
-
 
 class HoldingElem(models.Model):
     """
